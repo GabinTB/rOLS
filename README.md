@@ -12,7 +12,7 @@ Adapted for applications where dynamic relationships matter most: estimating rol
 | Python Versions | [![Python versions](https://img.shields.io/pypi/pyversions/rols)](https://pypi.org/project/rols/) |
 | License | [![License](https://img.shields.io/pypi/l/rols)](https://github.com/gabintaibi/rols/blob/main/LICENSE) |
 | Downloads | [![Downloads](https://img.shields.io/pypi/dm/rols)](https://pypi.org/project/rols/) |
-| GitHub Stars | [![Stars](https://img.shields.io/github/stars/gabintaibi/rols)](https://github.com/gabintaibi/rols) |
+| GitHub Stars | [![Stars](https://img.shields.io/github/stars/gabintaibi/rols)](https://github.com/GabinTB/rOLS) |
 
 ---
 
