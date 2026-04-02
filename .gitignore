@@ -1,0 +1,21 @@
+# Wheel ignore file for rols package
+build/
+dist/
+*.egg-info/
+.installed/
+.cache/
+.pyenv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.egg
+*.egg-info
+*.manifest
+*.spec
+*.swp
+*.swo
+*.DS_Store
+*.dist-info
+*.txt
