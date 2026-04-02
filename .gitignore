@@ -1,4 +1,3 @@
-# Wheel ignore file for rols package
 build/
 dist/
 *.egg-info/
