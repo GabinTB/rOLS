@@ -54,6 +54,83 @@ def _solve_batch(XtX: np.ndarray, XtY: np.ndarray) -> np.ndarray:
     return betas
 
 
+def _residualize_single(
+    y_col: np.ndarray,
+    X_np: np.ndarray,
+    T: int,
+    window: int,
+    min_periods: int,
+    ridge_term: np.ndarray,
+    x_row_valid: np.ndarray,
+) -> np.ndarray:
+    """
+    NaN-robust rolling OLS residuals for a single target column.
+
+    Drops rows within each window where either X or y is NaN,
+    then requires at least min_periods clean rows to produce a result.
+
+    Parameters
+    ----------
+    y_col        : (T,) array — single target column
+    X_np         : (T, k) array — regressors
+    T            : number of time steps
+    window       : rolling window length
+    min_periods  : minimum clean rows required
+    ridge_term   : (k, k) ridge regularization matrix
+    x_row_valid  : (T,) bool — rows where X has no NaN (precomputed)
+
+    Returns
+    -------
+    (T,) array of residuals, NaN where insufficient clean data
+    """
+    resid_col = np.full(T, np.nan)
+    n_windows = T - window + 1
+
+    for t in range(n_windows):
+        start, end = t, t + window
+        t_idx = end - 1
+
+        # skip if y is NaN at the prediction point
+        if np.isnan(y_col[t_idx]):
+            continue
+
+        y_w = y_col[start:end]
+        row_ok = x_row_valid[start:end] & ~np.isnan(y_w)
+
+        if row_ok.sum() < min_periods:
+            continue
+
+        Xw_c = X_np[start:end][row_ok]
+        yw_c = y_w[row_ok]
+
+        XtX = Xw_c.T @ Xw_c + ridge_term
+        try:
+            beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
+            resid_col[t_idx] = y_col[t_idx] - X_np[t_idx] @ beta_t
+        except np.linalg.LinAlgError:
+            pass
+
+    # Handle min_periods < window — early windows
+    if min_periods < window:
+        for t in range(min_periods - 1, window - 1):
+            if np.isnan(y_col[t]):
+                continue
+            y_w = y_col[:t + 1]
+            row_ok = x_row_valid[:t + 1] & ~np.isnan(y_w)
+            if row_ok.sum() < min_periods:
+                continue
+            Xw_c = X_np[:t + 1][row_ok]
+            yw_c = y_w[row_ok]
+            XtX = Xw_c.T @ Xw_c + ridge_term
+            try:
+                beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
+                resid_col[t] = y_col[t] - X_np[t] @ beta_t
+            except np.linalg.LinAlgError:
+                pass
+
+    return resid_col
+
+
 # ---------------------------------------------------------------------------
 # Rolling OLS / Ridge residualization
 # ---------------------------------------------------------------------------
@@ -72,17 +149,24 @@ def rolling_residualize(
     Ridge adds lambda * I to X'X before solving, shrinking betas toward zero.
     Set ridge_lambda=0.0 for standard OLS (default).
 
-    Rolling window is fully vectorized via stride tricks.
-    Expanding window uses a loop (variable window size precludes stride tricks).
+    NaN handling
+    ------------
+    NaNs in X invalidate the entire window (no regressor → no regression).
+    NaNs in y are handled per-column: rows with NaN are dropped within the
+    window before solving, and min_periods applies to the remaining clean rows.
+    This means NaNs in one target column never contaminate other columns.
+
+    Fast path: if neither X nor y contain any NaNs, uses fully vectorized
+    stride-based computation. Falls back to a per-column loop otherwise.
 
     Parameters
     ----------
     y            : (T, N) DataFrame — targets
     X            : (T, k) DataFrame — regressors
     window       : rolling window length
-    min_periods  : minimum observations to produce a result
+    min_periods  : minimum clean observations to produce a result
     expanding    : use expanding window instead of rolling
-    ridge_lambda : Ridge regularization strength (0.0 corresponds to OLS)
+    ridge_lambda : Ridge regularization strength (0.0 = OLS)
 
     Returns
     -------
@@ -96,17 +180,31 @@ def rolling_residualize(
     ridge_term = ridge_lambda * np.eye(k)
 
     if expanding:
+        # Expanding window — loop required regardless (variable size)
+        # Per-column NaN handling: drop rows with NaN in X or y_j
+        x_row_valid = ~np.isnan(X_np).any(axis=1)  # (T,)
         for t in range(min_periods - 1, T):
-            Xw, yw = X_np[:t + 1], y_np[:t + 1]
-            if np.isnan(Xw).any() or np.isnan(yw).any():
-                continue
-            XtX = Xw.T @ Xw + ridge_term
-            XtY = Xw.T @ yw
-            try:
-                resid[t] = y_np[t] - X_np[t] @ np.linalg.solve(XtX, XtY)
-            except np.linalg.LinAlgError:
-                pass
-    else:
+            X_end = X_np[:t + 1]
+            y_end = y_np[:t + 1]
+            x_ok  = x_row_valid[:t + 1]
+
+            for j in range(N):
+                if np.isnan(y_np[t, j]):
+                    continue
+                row_ok = x_ok & ~np.isnan(y_end[:, j])
+                if row_ok.sum() < min_periods:
+                    continue
+                Xw_c = X_end[row_ok]
+                yw_c = y_end[row_ok, j]
+                XtX  = Xw_c.T @ Xw_c + ridge_term
+                try:
+                    beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
+                    resid[t, j] = y_np[t, j] - X_np[t] @ beta_t
+                except np.linalg.LinAlgError:
+                    pass
+
+    elif not (np.isnan(X_np).any() or np.isnan(y_np).any()):
+        # Fast path: no NaNs anywhere — fully vectorized via stride tricks
         n_windows = T - window + 1
         if n_windows <= 0:
             return pd.DataFrame(resid, index=y.index, columns=y.columns)
@@ -114,12 +212,13 @@ def rolling_residualize(
         Xw = _make_windows(X_np, window)  # (n, window, k)
         yw = _make_windows(y_np, window)  # (n, window, N)
 
-        has_nan = np.isnan(Xw).any(axis=(1, 2)) | np.isnan(yw).any(axis=(1, 2))
-        valid   = ~has_nan
+        # X-only NaN check (y is clean by construction here)
+        has_nan_X = np.isnan(Xw).any(axis=(1, 2))
+        valid     = ~has_nan_X
 
-        XtX = np.einsum('twi,twj->tij', Xw, Xw)           # (n, k, k)
-        XtX[valid] += ridge_term                            # Ridge: add λI
-        XtY = np.einsum('twi,twn->tin', Xw, yw)            # (n, k, N)
+        XtX = np.einsum('twi,twj->tij', Xw, Xw)
+        XtX[valid] += ridge_term
+        XtY = np.einsum('twi,twn->tin', Xw, yw)
 
         betas = np.full((n_windows, k, N), np.nan)
         if valid.any():
@@ -127,19 +226,35 @@ def rolling_residualize(
 
         t_idx  = np.arange(n_windows) + window - 1
         fitted = np.einsum('ti,tin->tn', X_np[t_idx], betas)
-        resid[t_idx] = np.where(has_nan[:, None], np.nan, y_np[t_idx] - fitted)
+        resid[t_idx] = np.where(has_nan_X[:, None], np.nan, y_np[t_idx] - fitted)
 
-        # Handle min_periods < window — fill early windows with a loop
         if min_periods < window:
             for t in range(min_periods - 1, window - 1):
                 Xw_t, yw_t = X_np[:t + 1], y_np[:t + 1]
-                if np.isnan(Xw_t).any() or np.isnan(yw_t).any():
+                if np.isnan(Xw_t).any():
                     continue
                 XtX_t = Xw_t.T @ Xw_t + ridge_term
                 try:
                     resid[t] = y_np[t] - X_np[t] @ np.linalg.solve(XtX_t, Xw_t.T @ yw_t)
                 except np.linalg.LinAlgError:
                     pass
+
+    else:
+        # NaN-robust path: per-column loop
+        # NaNs in X invalidate the row for all columns.
+        # NaNs in y are handled per column — one column's NaNs don't affect others.
+        x_row_valid = ~np.isnan(X_np).any(axis=1)  # (T,) — shared across columns
+
+        for j in range(N):
+            resid[:, j] = _residualize_single(
+                y_col=y_np[:, j],
+                X_np=X_np,
+                T=T,
+                window=window,
+                min_periods=min_periods,
+                ridge_term=ridge_term,
+                x_row_valid=x_row_valid,
+            )
 
     return pd.DataFrame(resid, index=y.index, columns=y.columns)
 
@@ -179,25 +294,22 @@ def rolling_gram_schmidt(
     """
     cols = X.columns.tolist()
     if len(cols) == 1:
-        return X.copy()  # single column: nothing to orthogonalize
+        return X.copy()
 
     result = X.astype(np.float64).copy()
 
-    # Sequentially orthogonalize column j against columns 0..j-1
-    # by regressing column j on the already-orthogonalized predecessors
     for j in range(1, len(cols)):
-        y   = result[[cols[j]]]       # (T, 1) — current column
-        Xprev = result[cols[:j]]      # (T, j) — already orthogonalized predecessors
+        y_col  = result[[cols[j]]]
+        Xprev  = result[cols[:j]]
 
         resid = rolling_residualize(
-            y=y,
+            y=y_col,
             X=Xprev,
             window=window,
             min_periods=min_periods,
             expanding=expanding,
             ridge_lambda=0.0,
         )
-        # Where residualization produced NaN (warm-up), keep original values
         result[cols[j]] = resid[cols[j]].fillna(X[cols[j]])
 
     return result
@@ -238,34 +350,20 @@ def hac_se(
     -------
     pd.DataFrame of standard errors, same shape as residuals
     """
-    resid_np  = residuals.to_numpy(dtype=np.float64)   # (T, N)
-    f_np      = factor_values.to_numpy(dtype=np.float64)  # (T,)
-    T, N      = resid_np.shape
-    se        = np.full((T, N), np.nan)
+    resid_np = residuals.to_numpy(dtype=np.float64)
+    f_np     = factor_values.to_numpy(dtype=np.float64)
+    T, N     = resid_np.shape
+    se       = np.full((T, N), np.nan)
 
     def _nw_se_window(f_w: np.ndarray, e_w: np.ndarray) -> np.ndarray:
-        """
-        Newey-West SE for one window.
-        f_w : (n_obs,) factor values
-        e_w : (n_obs, N) residuals
-        Returns SE vector of shape (N,).
-        """
         n_obs = len(f_w)
-        # score: (n_obs, N) — x_t * eps_t
-        score = f_w[:, None] * e_w                  # (n_obs, N)
-        xx    = f_w @ f_w                            # scalar: X'X
-
-        # Newey-West long-run variance of score
-        # S = Gamma(0) + sum_{l=1}^{L} w_l * (Gamma(l) + Gamma(l)')
-        # For univariate x: S is scalar per asset
-        S = np.einsum('ti,ti->i', score, score) / n_obs  # Gamma(0), shape (N,)
-
+        score = f_w[:, None] * e_w
+        xx    = f_w @ f_w
+        S     = np.einsum('ti,ti->i', score, score) / n_obs
         for lag in range(1, n_lags + 1):
-            w = 1.0 - lag / (n_lags + 1)            # Bartlett weight
+            w     = 1.0 - lag / (n_lags + 1)
             gamma = np.einsum('ti,ti->i', score[lag:], score[:-lag]) / n_obs
-            S += 2 * w * gamma
-
-        # Var(beta) = S / (X'X)^2 * n_obs  (sandwich, scaled)
+            S    += 2 * w * gamma
         var_beta = S * n_obs / (xx ** 2)
         return np.sqrt(np.maximum(var_beta, 0.0))
 
@@ -289,7 +387,6 @@ def hac_se(
                 continue
             se[t] = _nw_se_window(f_w, e_w)
 
-        # Handle min_periods < window
         if min_periods < window:
             for t in range(min_periods - 1, window - 1):
                 f_w = f_np[:t + 1]
