@@ -556,3 +556,30 @@ class TestRollingOLSEdgeCases:
         pd.testing.assert_frame_equal(
             result1.get_beta("f1"), result2.get_beta("f1"), check_dtype=False
         )
+
+
+class TestRollingOLSSingularWarnings:
+    """RollingOLS surfaces singular-matrix warnings (issue #12)."""
+
+    def _collinear_setup(self, T=60):
+        """Duplicate control columns -> singular residualization windows."""
+        np.random.seed(42)
+        c = np.random.randn(T)
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        controls = pd.DataFrame({"c1": c, "c2": c})  # collinear
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+        return factors, assets, controls
+
+    def test_warns_by_default(self):
+        """Collinear controls trigger a RuntimeWarning during fit."""
+        factors, assets, controls = self._collinear_setup()
+        ols = RollingOLS(window=20)
+        with pytest.warns(RuntimeWarning, match="singular"):
+            ols.fit_transform(factors, assets, controls=controls)
+
+    def test_warn_singular_false_suppresses(self, recwarn):
+        """warn_singular=False on the constructor suppresses the warning."""
+        factors, assets, controls = self._collinear_setup()
+        ols = RollingOLS(window=20, warn_singular=False)
+        ols.fit_transform(factors, assets, controls=controls)
+        assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn)

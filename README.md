@@ -93,6 +93,7 @@ for f in factors:
 | `hac_lags` | `None` | Newey-West lags for HAC SE. `None` disables HAC |
 | `dtype` | `"float32"` | DataFrame storage dtype (see note below). Use `"float64"` for higher precision |
 | `asset_chunk_size` | `100` | Controls peak memory during residualization |
+| `warn_singular` | `True` | Warn (RuntimeWarning) on singular windows. Set `False` to suppress |
 
 ---
 

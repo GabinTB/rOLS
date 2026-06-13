@@ -14,9 +14,24 @@ hac_se                : Newey-West HAC standard errors from residuals
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import as_strided
+
+
+def _warn_singular(n: int) -> None:
+    """Emit a single aggregated RuntimeWarning for n singular windows."""
+    if n <= 0:
+        return
+    warnings.warn(
+        f"{n} singular window(s) — affected estimates set to NaN. "
+        "This usually means collinear regressors or a degenerate window; "
+        "consider adding Ridge regularization (lambda_ > 0).",
+        RuntimeWarning,
+        stacklevel=3,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -35,14 +50,18 @@ def _make_windows(arr: np.ndarray, window: int) -> np.ndarray:
     return as_strided(arr, shape=shape, strides=strides)
 
 
-def _solve_batch(XtX: np.ndarray, XtY: np.ndarray) -> np.ndarray:
+def _solve_batch(XtX: np.ndarray, XtY: np.ndarray, warn_singular: bool = True) -> np.ndarray:
     """
     Batch solve XtX[i] @ beta[i] = XtY[i].
     Falls back element-wise on singular windows.
     Returns betas with NaN where solve failed.
+
+    If warn_singular is True, emits a single aggregated RuntimeWarning
+    summarizing how many windows were singular.
     """
     n, k, N = XtY.shape
     betas = np.full((n, k, N), np.nan)
+    n_singular = 0
     try:
         result = np.linalg.solve(XtX, XtY)
         result[~np.isfinite(result)] = np.nan
@@ -54,7 +73,9 @@ def _solve_batch(XtX: np.ndarray, XtY: np.ndarray) -> np.ndarray:
                 b[~np.isfinite(b)] = np.nan
                 betas[i] = b
             except np.linalg.LinAlgError:
-                pass
+                n_singular += 1
+    if warn_singular:
+        _warn_singular(n_singular)
     return betas
 
 
@@ -66,7 +87,7 @@ def _residualize_single(
     min_periods: int,
     ridge_term: np.ndarray,
     x_row_valid: np.ndarray,
-) -> np.ndarray:
+) -> tuple[np.ndarray, int]:
     """
     NaN-robust rolling OLS residuals for a single target column.
 
@@ -85,9 +106,11 @@ def _residualize_single(
 
     Returns
     -------
-    (T,) array of residuals, NaN where insufficient clean data
+    (resid_col, n_singular) : (T,) array of residuals (NaN where insufficient
+        clean data or the solve was singular) and the count of singular windows.
     """
     resid_col = np.full(T, np.nan)
+    n_singular = 0
     n_windows = T - window + 1
 
     for t in range(n_windows):
@@ -112,7 +135,7 @@ def _residualize_single(
             beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
             resid_col[t_idx] = y_col[t_idx] - X_np[t_idx] @ beta_t
         except np.linalg.LinAlgError:
-            pass
+            n_singular += 1
 
     # Handle min_periods < window — early windows
     if min_periods < window:
@@ -130,9 +153,9 @@ def _residualize_single(
                 beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
                 resid_col[t] = y_col[t] - X_np[t] @ beta_t
             except np.linalg.LinAlgError:
-                pass
+                n_singular += 1
 
-    return resid_col
+    return resid_col, n_singular
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +169,7 @@ def rolling_residualize(
     min_periods: int,
     expanding: bool,
     ridge_lambda: float = 0.0,
+    warn_singular: bool = True,
 ) -> pd.DataFrame:
     """
     Compute rolling OLS (or Ridge) residuals: y_t - X_t @ beta_t for each t.
@@ -179,6 +203,9 @@ def rolling_residualize(
     min_periods  : minimum clean observations to produce a result
     expanding    : use expanding window instead of rolling
     ridge_lambda : Ridge regularization strength (0.0 = OLS)
+    warn_singular : if True (default), emit a single aggregated RuntimeWarning
+        when one or more windows are singular (estimates set to NaN). Set False
+        to suppress (e.g. when singular warm-up windows are expected).
 
     Returns
     -------
@@ -190,6 +217,7 @@ def rolling_residualize(
     k    = X_np.shape[1]
     resid = np.full((T, N), np.nan)
     ridge_term = ridge_lambda * np.eye(k)
+    n_singular = 0
 
     if expanding:
         # Expanding window — loop required regardless (variable size)
@@ -213,7 +241,7 @@ def rolling_residualize(
                     beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
                     resid[t, j] = y_np[t, j] - X_np[t] @ beta_t
                 except np.linalg.LinAlgError:
-                    pass
+                    n_singular += 1
 
     elif not (np.isnan(X_np).any() or np.isnan(y_np).any()):
         # Fast path: no NaNs anywhere — fully vectorized via stride tricks
@@ -234,7 +262,8 @@ def rolling_residualize(
 
         betas = np.full((n_windows, k, N), np.nan)
         if valid.any():
-            betas[valid] = _solve_batch(XtX[valid], XtY[valid])
+            # _solve_batch emits its own aggregated warning for the batch.
+            betas[valid] = _solve_batch(XtX[valid], XtY[valid], warn_singular=warn_singular)
 
         t_idx  = np.arange(n_windows) + window - 1
         fitted = np.einsum('ti,tin->tn', X_np[t_idx], betas)
@@ -249,7 +278,7 @@ def rolling_residualize(
                 try:
                     resid[t] = y_np[t] - X_np[t] @ np.linalg.solve(XtX_t, Xw_t.T @ yw_t)
                 except np.linalg.LinAlgError:
-                    pass
+                    n_singular += 1
 
     else:
         # NaN-robust path: per-column loop
@@ -258,7 +287,7 @@ def rolling_residualize(
         x_row_valid = ~np.isnan(X_np).any(axis=1)  # (T,) — shared across columns
 
         for j in range(N):
-            resid[:, j] = _residualize_single(
+            resid[:, j], col_singular = _residualize_single(
                 y_col=y_np[:, j],
                 X_np=X_np,
                 T=T,
@@ -267,6 +296,10 @@ def rolling_residualize(
                 ridge_term=ridge_term,
                 x_row_valid=x_row_valid,
             )
+            n_singular += col_singular
+
+    if warn_singular:
+        _warn_singular(n_singular)
 
     return pd.DataFrame(resid, index=y.index, columns=y.columns)
 
@@ -280,6 +313,7 @@ def rolling_gram_schmidt(
     window: int,
     min_periods: int,
     expanding: bool,
+    warn_singular: bool = True,
 ) -> pd.DataFrame:
     """
     Rolling Gram-Schmidt orthogonalization within a group of regressors.
@@ -321,6 +355,7 @@ def rolling_gram_schmidt(
             min_periods=min_periods,
             expanding=expanding,
             ridge_lambda=0.0,
+            warn_singular=warn_singular,
         )
         result[cols[j]] = resid[cols[j]].fillna(X[cols[j]])
 

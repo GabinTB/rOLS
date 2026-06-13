@@ -493,7 +493,7 @@ class TestSolveBatch:
         XtX = np.array([[[1.0, 1.0], [1.0, 1.0]]])
         XtY = np.array([[[1.0], [2.0]]])
 
-        betas = _solve_batch(XtX, XtY)
+        betas = _solve_batch(XtX, XtY, warn_singular=False)
         assert not np.isinf(betas).any()
         assert np.isnan(betas).all()
 
@@ -510,6 +510,67 @@ class TestSolveBatch:
         XtX = np.stack([good_XtX, bad_XtX])
         XtY = np.stack([good_XtY, bad_XtY])
 
-        betas = _solve_batch(XtX, XtY)
+        betas = _solve_batch(XtX, XtY, warn_singular=False)
         np.testing.assert_allclose(betas[0], good_beta, rtol=1e-10)
         assert np.isnan(betas[1]).all()
+
+
+class TestSingularWarnings:
+    """Tests for singular-matrix warnings (issue #12)."""
+
+    def _singular_inputs(self, T=60):
+        """X with duplicate columns -> singular windows; clean (no NaN) fast path."""
+        np.random.seed(42)
+        x = np.random.randn(T)
+        # two identical columns -> X'X singular
+        X = pd.DataFrame({"x1": x, "x2": x})
+        y = pd.DataFrame(np.random.randn(T, 1), columns=["y1"])
+        return y, X
+
+    def test_singular_emits_warning(self):
+        """Singular windows trigger a RuntimeWarning (not silent)."""
+        y, X = self._singular_inputs()
+        with pytest.warns(RuntimeWarning, match="singular"):
+            rolling_residualize(
+                y=y, X=X, window=20, min_periods=20, expanding=False, ridge_lambda=0.0
+            )
+
+    def test_singular_output_is_nan_not_inf(self):
+        """Singular windows produce NaN, not inf, and don't raise."""
+        y, X = self._singular_inputs()
+        with pytest.warns(RuntimeWarning):
+            result = rolling_residualize(
+                y=y, X=X, window=20, min_periods=20, expanding=False, ridge_lambda=0.0
+            )
+        vals = result.to_numpy()
+        assert not np.isinf(vals).any()
+        # The windowed region is singular -> NaN there.
+        assert np.isnan(vals[19:]).all()
+
+    def test_warn_singular_false_suppresses(self, recwarn):
+        """warn_singular=False suppresses the warning."""
+        y, X = self._singular_inputs()
+        rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False,
+            ridge_lambda=0.0, warn_singular=False,
+        )
+        assert len(recwarn) == 0
+
+    def test_non_singular_no_warning(self, recwarn):
+        """Well-conditioned input emits no warning."""
+        np.random.seed(0)
+        T = 60
+        y = pd.DataFrame(np.random.randn(T, 2), columns=["y1", "y2"])
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+        rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False, ridge_lambda=0.0
+        )
+        assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn)
+
+    def test_singular_warning_expanding_path(self):
+        """The expanding-window path also warns on singular windows."""
+        y, X = self._singular_inputs()
+        with pytest.warns(RuntimeWarning, match="singular"):
+            rolling_residualize(
+                y=y, X=X, window=20, min_periods=20, expanding=True, ridge_lambda=0.0
+            )

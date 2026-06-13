@@ -98,6 +98,11 @@ class RollingOLS:
     asset_chunk_size : int
         Number of assets processed per chunk during residualization.
         Lower values reduce peak memory at the cost of slightly more overhead.
+    warn_singular : bool
+        If True (default), emit a RuntimeWarning when one or more rolling
+        windows are singular (collinear regressors or degenerate windows),
+        with the affected estimates set to NaN. Set False to suppress these
+        warnings when singular windows are expected (e.g. short warm-ups).
 
     Examples
     --------
@@ -145,6 +150,7 @@ class RollingOLS:
         denom_tol: float = 1e-12,
         dtype: str = "float32",
         asset_chunk_size: int = 100,
+        warn_singular: bool = True,
     ) -> None:
         self.window          = window
         self.min_periods     = min_periods if min_periods is not None else window
@@ -156,6 +162,7 @@ class RollingOLS:
         self.denom_tol       = denom_tol
         self.dtype           = dtype
         self.asset_chunk_size = asset_chunk_size
+        self.warn_singular   = warn_singular
 
         self._is_fitted       = False
         self._factor_cols:    List[str] = []
@@ -213,6 +220,7 @@ class RollingOLS:
                 window=self.window,
                 min_periods=self.min_periods,
                 expanding=self.expanding,
+                warn_singular=self.warn_singular,
             ).astype(self.dtype)
 
         self._factor_cols = factors.columns.tolist()
@@ -226,6 +234,7 @@ class RollingOLS:
                     window=self.window,
                     min_periods=self.min_periods,
                     expanding=self.expanding,
+                    warn_singular=self.warn_singular,
                 ).astype(self.dtype)
 
             self._control_cols    = controls.columns.tolist()
@@ -238,6 +247,7 @@ class RollingOLS:
                 min_periods=self.min_periods,
                 expanding=self.expanding,
                 ridge_lambda=self.lambda_,
+                warn_singular=self.warn_singular,
             )
         else:
             self._control_cols    = []
@@ -295,6 +305,7 @@ class RollingOLS:
                         min_periods=self.min_periods,
                         expanding=self.expanding,
                         ridge_lambda=self.lambda_,
+                        warn_singular=self.warn_singular,
                     )
                     for chunk in chunks
                 ],
@@ -368,6 +379,7 @@ class RollingOLS:
                         min_periods=self.min_periods,
                         expanding=self.expanding,
                         ridge_lambda=self.lambda_,
+                        warn_singular=self.warn_singular,
                     )
                     ctrl_j_resid = rolling_residualize(
                         y=self._controls_fitted[[ctrl]],
@@ -376,6 +388,7 @@ class RollingOLS:
                         min_periods=self.min_periods,
                         expanding=self.expanding,
                         ridge_lambda=self.lambda_,
+                        warn_singular=self.warn_singular,
                     )[ctrl]
                 else:
                     asset_resid_j = assets
