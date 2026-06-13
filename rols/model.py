@@ -335,7 +335,10 @@ class RollingOLS:
                     if self.expanding
                     else asset_resids.rolling(self.window, min_periods=self.min_periods).count()
                 )
-                r2 = 1.0 - (1.0 - r2) * (n_obs - 1) / (n_obs - 2)
+                # adjusted R² is undefined with fewer than 3 observations;
+                # guard the denominator so n_obs <= 2 yields NaN, not inf.
+                safe_denom = (n_obs - 2).where(n_obs > 2)
+                r2 = 1.0 - (1.0 - r2) * (n_obs - 1) / safe_denom
 
             # Residuals — needed for HAC SE on demand
             reg_resids = asset_resids - beta.mul(f_resid, axis=0)

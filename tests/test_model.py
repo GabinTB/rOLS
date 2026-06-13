@@ -431,6 +431,46 @@ class TestRollingOLSModes:
         # (at least for the non-NaN values)
         assert not r2_1.equals(r2_2)
 
+    def test_adjusted_r2_small_min_periods_no_inf(self):
+        """adj_r2 with min_periods=2 must not produce inf (issue #7)."""
+        np.random.seed(42)
+        T = 30
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+
+        ols = RollingOLS(window=10, min_periods=2, adj_r2=True)
+        result = ols.fit_transform(factors, assets)
+        r2 = result.get_r2("f1")
+
+        # No inf anywhere — the divide-by-zero at n_obs == 2 must be guarded.
+        assert not np.isinf(r2.values).any()
+
+    def test_adjusted_r2_nobs_le_2_is_nan(self):
+        """Windows with n_obs <= 2 yield NaN (undefined), not inf or a fixed 1.0."""
+        np.random.seed(0)
+        T = 30
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
+
+        ols = RollingOLS(window=10, min_periods=2, adj_r2=True)
+        result = ols.fit_transform(factors, assets)
+        r2 = result.get_r2("f1")["a1"]
+
+        # Rolling count of observations per window (matches model internals).
+        n_obs = assets["a1"].rolling(10, min_periods=2).count()
+
+        # n_obs <= 2 -> adjusted R² undefined -> NaN
+        small = (n_obs <= 2) & n_obs.notna()
+        assert small.any()  # the construction actually reaches this regime
+        assert r2[small].isna().all()
+
+        # n_obs > 2 -> finite, valid values
+        big = n_obs > 2
+        valid = r2[big].dropna()
+        assert len(valid) > 0
+        assert np.isfinite(valid).all()
+        assert (valid <= 1.0).all()
+
 
 class TestRollingOLSEdgeCases:
     """Tests for edge cases."""
