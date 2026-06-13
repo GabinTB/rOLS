@@ -161,7 +161,15 @@ result.get_residuals("f1")     # regression residuals
 
 result.get_se("f1")            # Newey-West SE — requires hac_lags
 result.get_tstat("f1")         # beta / SE
+
+result.get_control_beta("f1", "ctrl1")  # requires return_control_betas=True
 ```
+
+`get_control_beta(factor, control)` returns the control's **joint** rolling beta —
+its coefficient from the full regression, recovered via Frisch-Waugh-Lovell
+(each control partialled out against all other controls), not a univariate
+marginal beta. The value does not depend on `factor` (control betas are shared
+across factors). Requires `return_control_betas=True` on `transform()`/`fit_transform()`.
 
 **Long format** — useful for downstream analysis, filtering, or plotting:
 

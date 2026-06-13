@@ -250,6 +250,7 @@ class RollingOLS:
     def transform(
         self,
         assets: pd.DataFrame,
+        return_control_betas: bool = False,
     ) -> RollingOLSResult:
         """
         Project assets onto fitted factor structure.
@@ -260,6 +261,10 @@ class RollingOLS:
         ----------
         assets : pd.DataFrame
             Target returns. e.g. df[["AAPL", "MSFT", "GOOG"]]
+        return_control_betas : bool
+            If True (and controls were passed to fit()), also compute each
+            control's joint rolling beta via Frisch-Waugh-Lovell partitioning,
+            accessible through result.get_control_beta(). More expensive.
 
         Returns
         -------
@@ -341,6 +346,43 @@ class RollingOLS:
             result._residuals[fac] = reg_resids
             result._factor_values[fac] = f_resid
 
+        # Control betas via FWL — independent of factor, so computed once and
+        # shared across all factors. For each control, partial it (and the
+        # assets) against all OTHER controls, then rolling univariate OLS.
+        control_betas: dict = {}
+        if return_control_betas and self._controls_fitted is not None:
+            for ctrl in self._control_cols:
+                other_controls = [c for c in self._control_cols if c != ctrl]
+                if other_controls:
+                    asset_resid_j = rolling_residualize(
+                        y=assets,
+                        X=self._controls_fitted[other_controls],
+                        window=self.window,
+                        min_periods=self.min_periods,
+                        expanding=self.expanding,
+                        ridge_lambda=self.lambda_,
+                    )
+                    ctrl_j_resid = rolling_residualize(
+                        y=self._controls_fitted[[ctrl]],
+                        X=self._controls_fitted[other_controls],
+                        window=self.window,
+                        min_periods=self.min_periods,
+                        expanding=self.expanding,
+                        ridge_lambda=self.lambda_,
+                    )[ctrl]
+                else:
+                    asset_resid_j = assets
+                    ctrl_j_resid = self._controls_fitted[ctrl]
+
+                cov_ac = _rolling_cov_series_df(ctrl_j_resid, asset_resid_j, self.window, self.min_periods, self.expanding)
+                var_c = _rolling_var(ctrl_j_resid, self.window, self.min_periods, self.expanding)
+                var_c_safe = var_c.where(var_c.abs() > self.denom_tol)
+                control_betas[ctrl] = cov_ac.div(var_c_safe, axis=0)
+
+            # Same dict shared across all factors
+            for fac in self._factor_cols:
+                result._control_betas[fac] = control_betas
+
         return result
 
     # ------------------------------------------------------------------
@@ -354,6 +396,7 @@ class RollingOLS:
         controls: Optional[pd.DataFrame] = None,
         orthogonalize_factors: bool = False,
         orthogonalize_controls: bool = False,
+        return_control_betas: bool = False,
     ) -> RollingOLSResult:
         """
         Convenience: fit() then transform() in one call.
@@ -363,5 +406,5 @@ class RollingOLS:
         return (
             self
             .fit(factors, controls, orthogonalize_factors, orthogonalize_controls)
-            .transform(assets)
+            .transform(assets, return_control_betas=return_control_betas)
         )

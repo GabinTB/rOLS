@@ -195,18 +195,118 @@ class TestRollingOLSTransform:
 
         assert result is not None
 
-    def test_transform_rejects_return_control_betas(self):
-        """return_control_betas was removed (issue #9) — passing it must raise TypeError."""
+    def test_control_beta_shape(self):
+        """get_control_beta returns shape (T, N_assets)."""
+        np.random.seed(42)
+        T = 120
+        factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
+        controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
+        assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
+
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(
+            factors, assets, controls=controls, return_control_betas=True
+        )
+
+        cb = result.get_control_beta("f1", "c1")
+        assert cb.shape == (T, 3)
+        assert list(cb.columns) == ["a1", "a2", "a3"]
+
+    def test_control_beta_shared_across_factors(self):
+        """Control betas do not depend on the factor — identical for all factors."""
+        np.random.seed(0)
+        T = 120
+        factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
+        controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(
+            factors, assets, controls=controls, return_control_betas=True
+        )
+
+        pd.testing.assert_frame_equal(
+            result.get_control_beta("f1", "c1"),
+            result.get_control_beta("f2", "c1"),
+        )
+
+    def test_control_beta_single_control_matches_univariate(self):
+        """With one control, FWL is identity: control beta == plain univariate beta."""
+        np.random.seed(1)
+        T = 150
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+
+        ols = RollingOLS(window=30)
+        result = ols.fit_transform(
+            factors, assets, controls=controls, return_control_betas=True
+        )
+        joint = result.get_control_beta("f1", "c1")
+
+        # Plain rolling univariate beta of assets on the single control
+        c = controls["c1"]
+        cov = assets.rolling(30, min_periods=30).cov(c)
+        var = c.rolling(30, min_periods=30).var()
+        univariate = cov.div(var, axis=0)
+
+        pd.testing.assert_frame_equal(
+            joint, univariate.astype(joint.dtypes), check_dtype=False, rtol=1e-3
+        )
+
+    def test_control_beta_multiple_correlated_differs_from_univariate(self):
+        """With correlated controls, joint beta differs from the marginal univariate beta."""
+        np.random.seed(7)
+        T = 200
+        # c2 is strongly correlated with c1
+        c1 = np.random.randn(T)
+        c2 = 0.9 * c1 + 0.1 * np.random.randn(T)
+        controls = pd.DataFrame({"c1": c1, "c2": c2})
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
+
+        ols = RollingOLS(window=40)
+        result = ols.fit_transform(
+            factors, assets, controls=controls, return_control_betas=True
+        )
+        joint = result.get_control_beta("f1", "c1")
+
+        # Marginal univariate beta ignoring c2
+        cov = assets.rolling(40, min_periods=40).cov(controls["c1"])
+        var = controls["c1"].rolling(40, min_periods=40).var()
+        univariate = cov.div(var, axis=0)
+
+        # Compare on rows where both are defined; they should meaningfully differ
+        mask = joint["a1"].notna() & univariate["a1"].notna()
+        diff = (joint["a1"][mask] - univariate["a1"][mask]).abs()
+        assert diff.mean() > 1e-3
+
+    def test_control_beta_default_raises(self):
+        """Default return_control_betas=False: get_control_beta raises RuntimeError."""
+        np.random.seed(42)
+        T = 100
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(factors, assets, controls=controls)
+
+        with pytest.raises(RuntimeError):
+            result.get_control_beta("f1", "c1")
+
+    def test_control_beta_no_controls_raises(self):
+        """return_control_betas=True but no controls passed: get_control_beta raises."""
         np.random.seed(42)
         T = 100
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
         ols = RollingOLS(window=20)
-        ols.fit(factors)
+        result = ols.fit_transform(factors, assets, return_control_betas=True)
 
-        with pytest.raises(TypeError):
-            ols.transform(assets, return_control_betas=True)
+        with pytest.raises(RuntimeError):
+            result.get_control_beta("f1", "c1")
 
 
 class TestRollingOLSFitTransform:

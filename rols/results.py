@@ -49,6 +49,11 @@ class RollingOLSResult:
     _r2:        Dict[str, pd.DataFrame] = field(default_factory=dict)
     _residuals: Dict[str, pd.DataFrame] = field(default_factory=dict)
 
+    # {factor -> {control -> DataFrame(T x N_assets)}}
+    # Control betas do not depend on the factor, so the inner dict is shared
+    # across all factors. Populated only when transform(return_control_betas=True).
+    _control_betas: Dict[str, Dict[str, pd.DataFrame]] = field(default_factory=dict)
+
     # cache for HAC SE: {factor -> DataFrame(T x N_assets)}
     _se_cache:  Dict[str, pd.DataFrame] = field(default_factory=dict)
 
@@ -91,6 +96,32 @@ class RollingOLSResult:
         """
         self._check_factor(factor)
         return self._residuals[factor]
+
+    def get_control_beta(self, factor: str, control: str) -> pd.DataFrame:
+        """
+        Joint rolling beta of a control variable, recovered via Frisch-Waugh-Lovell.
+
+        This is the control's coefficient from the full joint regression (each
+        control partialled out against all other controls), NOT a univariate
+        marginal beta. The value does not depend on `factor` — control betas are
+        shared across all factors — but a factor name is required for a consistent
+        getter signature and validation.
+
+        Only available if `return_control_betas=True` was passed to transform().
+        Shape: (T, N_assets).
+        """
+        self._check_factor(factor)
+        if not self._control_betas:
+            raise RuntimeError(
+                "Control betas were not computed. Pass return_control_betas=True "
+                "to transform() (and fit() with controls) to enable get_control_beta()."
+            )
+        if control not in self._control_betas[factor]:
+            available = list(self._control_betas[factor].keys())
+            raise KeyError(
+                f"Control '{control}' not found. Available controls: {available}"
+            )
+        return self._control_betas[factor][control]
 
     # ------------------------------------------------------------------
     # HAC standard errors (on demand)

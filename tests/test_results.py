@@ -329,3 +329,69 @@ class TestRollingOLSResultRanges:
         signal = result.get_signal("f1")
 
         assert beta.shape == signal.shape
+
+
+class TestRollingOLSResultControlBetas:
+    """Tests for get_control_beta()."""
+
+    @pytest.fixture
+    def setup_with_control_betas(self):
+        """Result computed with return_control_betas=True and two controls."""
+        np.random.seed(42)
+        T = 120
+        factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
+        controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
+        assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
+
+        ols = RollingOLS(window=20)
+        return ols.fit_transform(
+            factors, assets, controls=controls, return_control_betas=True
+        )
+
+    def test_get_control_beta_shape(self, setup_with_control_betas):
+        """get_control_beta returns shape (T, N_assets)."""
+        result = setup_with_control_betas
+        cb = result.get_control_beta("f1", "c1")
+
+        assert isinstance(cb, pd.DataFrame)
+        assert cb.shape == (120, 3)
+        assert list(cb.columns) == ["a1", "a2", "a3"]
+
+    def test_get_control_beta_invalid_factor_raises(self, setup_with_control_betas):
+        """Unknown factor raises KeyError."""
+        result = setup_with_control_betas
+        with pytest.raises(KeyError):
+            result.get_control_beta("nope", "c1")
+
+    def test_get_control_beta_invalid_control_raises(self, setup_with_control_betas):
+        """Unknown control raises KeyError."""
+        result = setup_with_control_betas
+        with pytest.raises(KeyError):
+            result.get_control_beta("f1", "nope")
+
+    def test_get_control_beta_default_raises(self):
+        """Default (return_control_betas=False) raises RuntimeError."""
+        np.random.seed(42)
+        T = 100
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(factors, assets, controls=controls)
+
+        with pytest.raises(RuntimeError):
+            result.get_control_beta("f1", "c1")
+
+    def test_get_control_beta_no_controls_raises(self):
+        """return_control_betas=True without controls raises RuntimeError."""
+        np.random.seed(42)
+        T = 100
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(factors, assets, return_control_betas=True)
+
+        with pytest.raises(RuntimeError):
+            result.get_control_beta("f1", "c1")
