@@ -4,6 +4,10 @@ dist/
 .installed/
 .cache/
 .pyenv/
+.venv/
+.uv/
+.claude/
+.vscode/
 __pycache__/
 *.pyc
 *.pyo
@@ -18,3 +22,6 @@ __pycache__/
 *.DS_Store
 *.dist-info
 *.txt
+.pytest_cache/
+htmlcov/
+.coverage

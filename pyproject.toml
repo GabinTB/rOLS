@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rols"
-version = "0.1.1"
+version = "0.1.2"
 description = "Vectorized rolling and expanding regression for multi-target, multi-factor time series."
 readme = "README.md"
 license = "MIT"
@@ -23,8 +23,22 @@ dependencies = [
     "pandas>=2.0",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+]
+
 [project.urls]
 Repository = "https://github.com/GabinTB/rOLS"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest >=7.0",
+    "pytest-cov >=4.0",
+    "ruff >=0.1.0",
+]
 
 [tool.setuptools]
 packages = ["rols"]
