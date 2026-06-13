@@ -371,34 +371,30 @@ def hac_se(
         var_beta = S * n_obs / (xx ** 2)
         return np.sqrt(np.maximum(var_beta, 0.0))
 
+    def _fill_window(t: int, f_w: np.ndarray, e_w: np.ndarray) -> None:
+        # Factor NaN invalidates the whole window — no regressor, no SE.
+        if np.isnan(f_w).any():
+            return
+        if len(f_w) <= n_lags:
+            return
+        # Residual NaNs are handled per-asset: only contaminated columns are
+        # left NaN, clean columns get a valid SE (mirrors rolling_residualize).
+        asset_nan = np.isnan(e_w).any(axis=0)
+        if asset_nan.all():
+            return
+        valid = ~asset_nan
+        se[t, valid] = _nw_se_window(f_w, e_w[:, valid])
+
     if expanding:
         for t in range(min_periods - 1, T):
-            f_w = f_np[:t + 1]
-            e_w = resid_np[:t + 1]
-            if np.isnan(f_w).any() or np.isnan(e_w).any():
-                continue
-            if len(f_w) <= n_lags:
-                continue
-            se[t] = _nw_se_window(f_w, e_w)
+            _fill_window(t, f_np[:t + 1], resid_np[:t + 1])
     else:
         for t in range(window - 1, T):
             start = t - window + 1
-            f_w   = f_np[start:t + 1]
-            e_w   = resid_np[start:t + 1]
-            if np.isnan(f_w).any() or np.isnan(e_w).any():
-                continue
-            if len(f_w) <= n_lags:
-                continue
-            se[t] = _nw_se_window(f_w, e_w)
+            _fill_window(t, f_np[start:t + 1], resid_np[start:t + 1])
 
         if min_periods < window:
             for t in range(min_periods - 1, window - 1):
-                f_w = f_np[:t + 1]
-                e_w = resid_np[:t + 1]
-                if np.isnan(f_w).any() or np.isnan(e_w).any():
-                    continue
-                if len(f_w) <= n_lags:
-                    continue
-                se[t] = _nw_se_window(f_w, e_w)
+                _fill_window(t, f_np[:t + 1], resid_np[:t + 1])
 
     return pd.DataFrame(se, index=residuals.index, columns=residuals.columns)

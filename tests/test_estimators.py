@@ -334,6 +334,89 @@ class TestHACSE:
         # Different lag lengths should produce different results
         assert not result_1lag.equals(result_5lag)
 
+    def test_nan_isolated_per_asset(self):
+        """A NaN in one asset must not contaminate other assets' SE (issue #8)."""
+        np.random.seed(42)
+        T = 100
+        clean = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
+        factor = pd.Series(np.random.randn(T), name="factor")
+
+        se_clean = hac_se(
+            residuals=clean, factor_values=factor,
+            window=20, min_periods=20, expanding=False, n_lags=3,
+        )
+
+        # Introduce a NaN into a2 only, inside one window's reach.
+        contaminated = clean.copy()
+        contaminated.iloc[50, contaminated.columns.get_loc("a2")] = np.nan
+
+        se_contam = hac_se(
+            residuals=contaminated, factor_values=factor,
+            window=20, min_periods=20, expanding=False, n_lags=3,
+        )
+
+        # a1 and a3 SEs are identical to the all-clean run — no contamination.
+        pd.testing.assert_series_equal(se_clean["a1"], se_contam["a1"])
+        pd.testing.assert_series_equal(se_clean["a3"], se_contam["a3"])
+
+        # a2 is NaN exactly on the windows that span the NaN row (t in [50, 69]),
+        # and unaffected outside that span.
+        affected = se_contam["a2"].iloc[50:70]
+        assert affected.isna().all()
+        # A window ending before the NaN row is still valid for a2.
+        assert not np.isnan(se_contam["a2"].iloc[49])
+
+    def test_factor_nan_invalidates_whole_window(self):
+        """A factor NaN drops SE for ALL assets in affected windows."""
+        np.random.seed(0)
+        T = 100
+        residuals = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
+        factor = pd.Series(np.random.randn(T), name="factor")
+        factor.iloc[50] = np.nan
+
+        se = hac_se(
+            residuals=residuals, factor_values=factor,
+            window=20, min_periods=20, expanding=False, n_lags=3,
+        )
+
+        # Every window spanning t=50 (i.e. t in [50, 69]) is fully NaN.
+        affected = se.iloc[50:70]
+        assert affected.isna().all().all()
+        # A window ending at t=49 is unaffected for all assets.
+        assert se.iloc[49].notna().all()
+
+    def test_matches_manual_newey_west(self):
+        """Cross-check SE against a manual Newey-West on a clean single-asset window."""
+        np.random.seed(7)
+        T = 40
+        window, n_lags = 20, 3
+        e = np.random.randn(T)
+        f = np.random.randn(T)
+        residuals = pd.DataFrame({"a1": e})
+        factor = pd.Series(f, name="factor")
+
+        se = hac_se(
+            residuals=residuals, factor_values=factor,
+            window=window, min_periods=window, expanding=False, n_lags=n_lags,
+        )
+
+        # Manual Newey-West for the window ending at the last timestep.
+        t = T - 1
+        f_w = f[t - window + 1:t + 1]
+        e_w = e[t - window + 1:t + 1]
+        n_obs = window
+        score = f_w * e_w
+        xx = f_w @ f_w
+        S = np.sum(score ** 2) / n_obs
+        for lag in range(1, n_lags + 1):
+            w = 1.0 - lag / (n_lags + 1)
+            gamma = np.sum(score[lag:] * score[:-lag]) / n_obs
+            S += 2 * w * gamma
+        var_beta = S * n_obs / (xx ** 2)
+        expected = np.sqrt(max(var_beta, 0.0))
+
+        assert se["a1"].iloc[t] == pytest.approx(expected, rel=1e-10)
+
 
 class TestSolveBatch:
     """Tests for _solve_batch inf/NaN handling (issue #6)."""
