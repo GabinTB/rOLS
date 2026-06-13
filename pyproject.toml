@@ -27,18 +27,26 @@ dependencies = [
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "ruff>=0.1.0",
 ]
 
 [project.urls]
 Repository = "https://github.com/GabinTB/rOLS"
 
-[tool.uv]
-dev-dependencies = [
-    "pytest >=7.0",
-    "pytest-cov >=4.0",
-    "ruff >=0.1.0",
-]
-
 [tool.setuptools]
 packages = ["rols"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.0.0",
+    "ipykernel>=6.0.0",
+    "matplotlib>=3.5.0",
+    "seaborn>=0.12.0",
+    "pandas-datareader>=0.10.0",
+]
