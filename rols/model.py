@@ -90,7 +90,11 @@ class RollingOLS:
     denom_tol : float
         Threshold below which rolling variance is treated as zero (NaN out).
     dtype : str
-        Input dtype. 'float32' saves memory; 'float64' for higher precision.
+        Storage dtype for input/intermediate pandas DataFrames. 'float32' saves
+        memory; 'float64' for higher precision. Note: this controls DataFrame
+        storage only — internal matrix operations (gram matrix accumulation and
+        the linear solve) always run in float64 for numerical stability,
+        regardless of this setting. See rolling_residualize for details.
     asset_chunk_size : int
         Number of assets processed per chunk during residualization.
         Lower values reduce peak memory at the cost of slightly more overhead.

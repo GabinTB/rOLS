@@ -163,6 +163,14 @@ def rolling_residualize(
     Fast path: if neither X nor y contain any NaNs, uses fully vectorized
     stride-based computation. Falls back to a per-column loop otherwise.
 
+    Note
+    ----
+    Internal matrix operations (gram matrix accumulation and the linear solve)
+    always use float64 for numerical stability, regardless of the input dtype.
+    np.linalg.solve loses accuracy in float32 for ill-conditioned matrices, so
+    inputs are upcast here. The RollingOLS ``dtype`` parameter controls pandas
+    DataFrame storage only — it does not change the precision of the solve.
+
     Parameters
     ----------
     y            : (T, N) DataFrame — targets

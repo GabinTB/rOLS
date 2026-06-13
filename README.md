@@ -91,7 +91,7 @@ for f in factors:
 | `adj_r2` | `False` | Compute adjusted R² |
 | `lag_signal` | `False` | Use `beta_{t-1} * factor_t` instead of `beta_t * factor_t` |
 | `hac_lags` | `None` | Newey-West lags for HAC SE. `None` disables HAC |
-| `dtype` | `"float32"` | Input dtype. Use `"float64"` for higher precision |
+| `dtype` | `"float32"` | DataFrame storage dtype (see note below). Use `"float64"` for higher precision |
 | `asset_chunk_size` | `100` | Controls peak memory during residualization |
 
 ---
@@ -248,5 +248,7 @@ signal = result.get_signal("f1")
 **Stride tricks** — the rolling window matrix operations use `numpy.lib.stride_tricks.as_strided` to build zero-copy sliding window views, avoiding explicit loops over time for the fixed-window case.
 
 **Memory** — asset residualization is chunked (`asset_chunk_size`) to bound peak memory when the number of targets is large. Reduce this value if you hit memory limits.
+
+**Precision (`dtype`)** — `dtype` controls the storage precision of the input and intermediate pandas DataFrames only. Internal matrix operations (gram matrix accumulation and the linear solve) always run in **float64** regardless of this setting, because `np.linalg.solve` loses accuracy in float32 for ill-conditioned windows. So `float32` reduces DataFrame memory but does not change the numerical precision of the regression itself.
 
 **HAC caching** — standard errors are computed lazily and cached on first call to `get_se()`. Calling it multiple times for the same factor incurs no extra cost.

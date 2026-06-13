@@ -156,6 +156,42 @@ class TestRollingResidualize:
         # Only last observation should be non-NaN
         assert result.iloc[-1].notna().all()
 
+    def test_float32_inputs_finite(self):
+        """float32 inputs must not raise and must produce finite residuals (issue #10)."""
+        np.random.seed(42)
+        T = 100
+        y = pd.DataFrame(np.random.randn(T, 3).astype(np.float32), columns=["y1", "y2", "y3"])
+        X = pd.DataFrame(np.random.randn(T, 2).astype(np.float32), columns=["x1", "x2"])
+
+        result = rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False, ridge_lambda=0.0
+        )
+
+        assert result.shape == y.shape
+        valid = result.to_numpy()[~np.isnan(result.to_numpy())]
+        assert len(valid) > 0
+        assert np.isfinite(valid).all()
+
+    def test_float32_matches_float64_baseline(self):
+        """float32 inputs give results numerically close to the float64 baseline."""
+        np.random.seed(0)
+        T = 120
+        y64 = pd.DataFrame(np.random.randn(T, 2), columns=["y1", "y2"])
+        X64 = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+
+        result64 = rolling_residualize(
+            y=y64, X=X64, window=20, min_periods=20, expanding=False, ridge_lambda=0.0
+        )
+        result32 = rolling_residualize(
+            y=y64.astype(np.float32), X=X64.astype(np.float32),
+            window=20, min_periods=20, expanding=False, ridge_lambda=0.0
+        )
+
+        # Compare where both are defined — within float32 tolerance.
+        np.testing.assert_allclose(
+            result32.to_numpy(), result64.to_numpy(), atol=1e-4, equal_nan=True
+        )
+
 
 class TestRollingGramSchmidt:
     """Tests for rolling_gram_schmidt function."""
