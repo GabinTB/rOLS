@@ -49,9 +49,6 @@ class RollingOLSResult:
     _r2:        Dict[str, pd.DataFrame] = field(default_factory=dict)
     _residuals: Dict[str, pd.DataFrame] = field(default_factory=dict)
 
-    # {factor -> {control -> DataFrame(T x N_assets)}}
-    _control_betas: Dict[str, Dict[str, pd.DataFrame]] = field(default_factory=dict)
-
     # cache for HAC SE: {factor -> DataFrame(T x N_assets)}
     _se_cache:  Dict[str, pd.DataFrame] = field(default_factory=dict)
 
@@ -94,20 +91,6 @@ class RollingOLSResult:
         """
         self._check_factor(factor)
         return self._residuals[factor]
-
-    def get_control_beta(self, factor: str, control: str) -> pd.DataFrame:
-        """
-        Beta of a control variable from the joint regression.
-        Only available if return_control_betas=True was passed to transform().
-        Shape: (T, N_assets).
-        """
-        self._check_factor(factor)
-        if factor not in self._control_betas or control not in self._control_betas[factor]:
-            raise KeyError(
-                f"Control beta for ('{factor}', '{control}') not found. "
-                "Pass return_control_betas=True to transform()."
-            )
-        return self._control_betas[factor][control]
 
     # ------------------------------------------------------------------
     # HAC standard errors (on demand)

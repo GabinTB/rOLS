@@ -195,6 +195,19 @@ class TestRollingOLSTransform:
 
         assert result is not None
 
+    def test_transform_rejects_return_control_betas(self):
+        """return_control_betas was removed (issue #9) — passing it must raise TypeError."""
+        np.random.seed(42)
+        T = 100
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+
+        ols = RollingOLS(window=20)
+        ols.fit(factors)
+
+        with pytest.raises(TypeError):
+            ols.transform(assets, return_control_betas=True)
+
 
 class TestRollingOLSFitTransform:
     """Tests for fit_transform() method."""

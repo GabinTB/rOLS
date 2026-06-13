@@ -116,15 +116,12 @@ ols.fit(df[["f1", "f2", "f3"]], orthogonalize_factors=True)
 
 ---
 
-### `.transform(targets, return_control_betas=False)`
+### `.transform(targets)`
 
 Projects targets onto the fitted factor structure and returns a `RollingOLSResult`.
 
 ```python
 result = ols.transform(df[["y1", "y2", "y3"]])
-
-# With control betas (more expensive)
-result = ols.transform(df[["y1", "y2"]], return_control_betas=True)
 ```
 
 The fitted model can be reused on different target sets without re-fitting:
@@ -164,8 +161,6 @@ result.get_residuals("f1")     # regression residuals
 
 result.get_se("f1")            # Newey-West SE — requires hac_lags
 result.get_tstat("f1")         # beta / SE
-
-result.get_control_beta("f1", "ctrl1")  # requires return_control_betas=True
 ```
 
 **Long format** — useful for downstream analysis, filtering, or plotting:

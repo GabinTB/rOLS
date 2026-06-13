@@ -250,7 +250,6 @@ class RollingOLS:
     def transform(
         self,
         assets: pd.DataFrame,
-        # return_control_betas: bool = False,
     ) -> RollingOLSResult:
         """
         Project assets onto fitted factor structure.
@@ -342,9 +341,6 @@ class RollingOLS:
             result._residuals[fac] = reg_resids
             result._factor_values[fac] = f_resid
 
-            # if return_control_betas and self._controls_fitted is not None:
-            #     result._control_betas[fac] = self._compute_control_betas(assets)
-
         return result
 
     # ------------------------------------------------------------------
@@ -358,7 +354,6 @@ class RollingOLS:
         controls: Optional[pd.DataFrame] = None,
         orthogonalize_factors: bool = False,
         orthogonalize_controls: bool = False,
-        # return_control_betas: bool = False,
     ) -> RollingOLSResult:
         """
         Convenience: fit() then transform() in one call.
@@ -368,16 +363,5 @@ class RollingOLS:
         return (
             self
             .fit(factors, controls, orthogonalize_factors, orthogonalize_controls)
-            .transform(assets)#, return_control_betas)
+            .transform(assets)
         )
-
-    # def _compute_control_betas(self, assets: pd.DataFrame) -> dict:
-    #     """Univariate rolling beta of each control against assets (marginal, not joint)."""
-    #     out = {}
-    #     for ctrl in self._control_cols:
-    #         c         = self._controls_fitted[ctrl]
-    #         cov_ac    = _rolling_cov_series_df(c, assets, self.window, self.min_periods, self.expanding)
-    #         var_c     = _rolling_var(c, self.window, self.min_periods, self.expanding)
-    #         var_c_safe = var_c.where(var_c.abs() > self.denom_tol)
-    #         out[ctrl]  = cov_ac.div(var_c_safe, axis=0)
-    #     return out
