@@ -8,6 +8,7 @@ from rols.estimators import (
     rolling_residualize,
     rolling_gram_schmidt,
     hac_se,
+    _solve_batch,
 )
 
 
@@ -332,3 +333,64 @@ class TestHACSE:
 
         # Different lag lengths should produce different results
         assert not result_1lag.equals(result_5lag)
+
+
+class TestSolveBatch:
+    """Tests for _solve_batch inf/NaN handling (issue #6)."""
+
+    def test_well_conditioned_correct_betas(self):
+        """Well-conditioned windows return the exact OLS solution."""
+        np.random.seed(0)
+        n, k, N = 4, 2, 3
+        XtX = np.empty((n, k, k))
+        XtY = np.empty((n, k, N))
+        expected = np.empty((n, k, N))
+        for i in range(n):
+            A = np.random.randn(k, k)
+            XtX_i = A @ A.T + np.eye(k)  # SPD, well-conditioned
+            beta_i = np.random.randn(k, N)
+            XtX[i] = XtX_i
+            XtY[i] = XtX_i @ beta_i
+            expected[i] = beta_i
+
+        betas = _solve_batch(XtX, XtY)
+        assert np.isfinite(betas).all()
+        np.testing.assert_allclose(betas, expected, rtol=1e-8)
+
+    def test_non_finite_solve_returns_nan(self):
+        """A window whose solve overflows to inf is sanitized to NaN, not inf."""
+        # diag(1e-160) with huge RHS overflows in np.linalg.solve without
+        # raising LinAlgError -> result contains inf/nan.
+        XtX = np.array([[[1e-160, 0.0], [0.0, 1e-160]]])
+        XtY = np.array([[[1e200], [1e200]]])
+
+        betas = _solve_batch(XtX, XtY)
+        assert not np.isinf(betas).any()
+        assert np.isnan(betas).all()
+
+    def test_singular_window_returns_nan(self):
+        """An exactly singular window returns NaN (not inf), via the fallback."""
+        # Collinear columns -> singular XtX
+        XtX = np.array([[[1.0, 1.0], [1.0, 1.0]]])
+        XtY = np.array([[[1.0], [2.0]]])
+
+        betas = _solve_batch(XtX, XtY)
+        assert not np.isinf(betas).any()
+        assert np.isnan(betas).all()
+
+    def test_mixed_batch_isolates_bad_window(self):
+        """A bad window stays NaN while good windows in the same batch solve correctly."""
+        good_XtX = np.array([[2.0, 0.0], [0.0, 4.0]])
+        good_beta = np.array([[1.5], [-2.0]])
+        good_XtY = good_XtX @ good_beta
+
+        # singular second window forces the element-wise fallback for the batch
+        bad_XtX = np.array([[1.0, 1.0], [1.0, 1.0]])
+        bad_XtY = np.array([[1.0], [2.0]])
+
+        XtX = np.stack([good_XtX, bad_XtX])
+        XtY = np.stack([good_XtY, bad_XtY])
+
+        betas = _solve_batch(XtX, XtY)
+        np.testing.assert_allclose(betas[0], good_beta, rtol=1e-10)
+        assert np.isnan(betas[1]).all()

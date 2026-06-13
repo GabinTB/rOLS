@@ -44,11 +44,15 @@ def _solve_batch(XtX: np.ndarray, XtY: np.ndarray) -> np.ndarray:
     n, k, N = XtY.shape
     betas = np.full((n, k, N), np.nan)
     try:
-        betas = np.linalg.solve(XtX, XtY)
+        result = np.linalg.solve(XtX, XtY)
+        result[~np.isfinite(result)] = np.nan
+        betas[...] = result
     except np.linalg.LinAlgError:
         for i in range(n):
             try:
-                betas[i] = np.linalg.solve(XtX[i], XtY[i])
+                b = np.linalg.solve(XtX[i], XtY[i])
+                b[~np.isfinite(b)] = np.nan
+                betas[i] = b
             except np.linalg.LinAlgError:
                 pass
     return betas
