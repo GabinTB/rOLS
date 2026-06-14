@@ -4,6 +4,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from unittest.mock import patch
+
+import rols.estimators as est
 from rols.estimators import (
     rolling_residualize,
     rolling_gram_schmidt,
@@ -191,6 +194,156 @@ class TestRollingResidualize:
         np.testing.assert_allclose(
             result32.to_numpy(), result64.to_numpy(), atol=1e-4, equal_nan=True
         )
+
+
+class TestVectorizedNaNRobustPath:
+    """Tests for the intermediate vectorized NaN-robust path (issue #2).
+
+    Path selection:
+      1. no NaNs              -> fast vectorized path
+      2. NaNs only in y       -> intermediate path (O(N) loop, T vectorized)
+      3. NaNs in X            -> per-column fallback (_residualize_single)
+
+    Performance: the intermediate path replaces the O(T * N) Python loop of the
+    per-column fallback with an O(N) loop (T vectorized inside each iteration),
+    giving a large speedup on sparse panels (e.g. ~10-50x at MSCI-World scale,
+    ~2300 assets, where NaNs from constituent entry/exit are always present).
+    """
+
+    def _reference_per_column(self, y, X, window, min_periods, ridge_lambda=0.0):
+        """Compute residuals via the per-column loop (_residualize_single)."""
+        y_np = y.to_numpy(np.float64)
+        X_np = X.to_numpy(np.float64)
+        T, N = y_np.shape
+        k = X_np.shape[1]
+        ridge_term = ridge_lambda * np.eye(k)
+        x_row_valid = ~np.isnan(X_np).any(axis=1)
+        ref = np.full((T, N), np.nan)
+        for j in range(N):
+            ref[:, j], _ = est._residualize_single(
+                y_np[:, j], X_np, T, window, min_periods, ridge_term, x_row_valid
+            )
+        return ref
+
+    def test_matches_per_column_loop(self):
+        """Intermediate path must match the per-column loop exactly."""
+        np.random.seed(3)
+        T, N, k = 90, 7, 2
+        y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
+        X = pd.DataFrame(np.random.randn(T, k), columns=["x1", "x2"])
+        # Scattered NaNs in y only (X stays clean) -> hits the intermediate path.
+        y.iloc[10:20, 0] = np.nan
+        y.iloc[30, 2] = np.nan
+        y.iloc[5:8, 4] = np.nan
+        y.iloc[40:45, 6] = np.nan
+
+        result = rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False, ridge_lambda=0.0
+        )
+        ref = self._reference_per_column(y, X, window=20, min_periods=20)
+        np.testing.assert_allclose(result.to_numpy(), ref, equal_nan=True, atol=1e-12)
+
+    def test_matches_per_column_loop_min_periods_lt_window(self):
+        """Match the per-column loop including the early-window branch."""
+        np.random.seed(4)
+        T, N, k = 70, 5, 2
+        y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
+        X = pd.DataFrame(np.random.randn(T, k), columns=["x1", "x2"])
+        y.iloc[12:18, 1] = np.nan
+        y.iloc[3, 3] = np.nan
+
+        result = rolling_residualize(
+            y=y, X=X, window=20, min_periods=10, expanding=False, ridge_lambda=0.0
+        )
+        ref = self._reference_per_column(y, X, window=20, min_periods=10)
+        np.testing.assert_allclose(result.to_numpy(), ref, equal_nan=True, atol=1e-12)
+
+    def test_matches_per_column_loop_with_ridge(self):
+        """Match the per-column loop when Ridge regularization is active."""
+        np.random.seed(5)
+        T, N, k = 80, 4, 2
+        y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
+        X = pd.DataFrame(np.random.randn(T, k), columns=["x1", "x2"])
+        y.iloc[15:25, 2] = np.nan
+
+        result = rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False, ridge_lambda=0.5
+        )
+        ref = self._reference_per_column(y, X, window=20, min_periods=20, ridge_lambda=0.5)
+        np.testing.assert_allclose(result.to_numpy(), ref, equal_nan=True, atol=1e-12)
+
+    def test_fast_path_used_when_no_nans(self):
+        """No NaNs anywhere -> fast path (per-column loop never invoked)."""
+        np.random.seed(6)
+        T, N = 60, 4
+        y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+        with patch.object(est, "_residualize_single", wraps=est._residualize_single) as m:
+            rolling_residualize(
+                y=y, X=X, window=15, min_periods=15, expanding=False
+            )
+        assert m.call_count == 0
+
+    def test_intermediate_path_used_when_nans_only_in_y(self):
+        """NaNs only in y -> intermediate path (per-column loop never invoked)."""
+        np.random.seed(7)
+        T, N = 60, 4
+        y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
+        y.iloc[10:14, 1] = np.nan
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+        with patch.object(est, "_residualize_single", wraps=est._residualize_single) as m:
+            rolling_residualize(
+                y=y, X=X, window=15, min_periods=15, expanding=False
+            )
+        assert m.call_count == 0
+
+    def test_fallback_used_when_nans_in_X(self):
+        """NaNs in X -> per-column fallback (one call per asset)."""
+        np.random.seed(8)
+        T, N = 60, 4
+        y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+        X.iloc[10:14, 0] = np.nan
+        with patch.object(est, "_residualize_single", wraps=est._residualize_single) as m:
+            rolling_residualize(
+                y=y, X=X, window=15, min_periods=15, expanding=False
+            )
+        assert m.call_count == N
+
+    def test_nan_isolated_per_asset(self):
+        """A NaN in one asset's y must not contaminate other assets."""
+        np.random.seed(9)
+        T, N = 80, 4
+        y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+
+        clean = rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False
+        )
+        contaminated = y.copy()
+        contaminated.iloc[50, 1] = np.nan
+        contam = rolling_residualize(
+            y=contaminated, X=X, window=20, min_periods=20, expanding=False
+        )
+
+        # Untouched columns are bit-identical to the all-clean run.
+        for col in ["y0", "y2", "y3"]:
+            pd.testing.assert_series_equal(clean[col], contam[col])
+
+    def test_prediction_point_nan_yields_nan(self):
+        """When y_j is NaN at the prediction point, that residual is NaN."""
+        np.random.seed(10)
+        T, N = 60, 2
+        y = pd.DataFrame(np.random.randn(T, N), columns=["y0", "y1"])
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+        y.iloc[40, 0] = np.nan
+        result = rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False
+        )
+        # The prediction point itself is NaN.
+        assert np.isnan(result.iloc[40, 0])
+        # A window ending before the NaN row (t=39, rows [20:40)) is unaffected.
+        assert not np.isnan(result.iloc[39, 0])
 
 
 class TestRollingGramSchmidt:
