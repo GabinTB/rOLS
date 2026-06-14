@@ -582,14 +582,50 @@ def hac_se(
         se[t, valid] = _nw_se_window(f_w, e_w[:, valid])
 
     if expanding:
+        # Expanding window — loop required (variable window size per t).
         for t in range(min_periods - 1, T):
             _fill_window(t, f_np[:t + 1], resid_np[:t + 1])
     else:
-        for t in range(window - 1, T):
-            start = t - window + 1
-            _fill_window(t, f_np[start:t + 1], resid_np[start:t + 1])
+        # Rolling window — fully vectorized over T via stride tricks. The
+        # Python loop is O(n_lags) (typically 3-10), with T collapsed into the
+        # einsum reductions. This produces results identical to the per-window
+        # loop (see test_vectorized_matches_loop) at a large speedup: at
+        # T=1500, N=2300 the loop made ~1500 Python calls each doing O(n_lags*N)
+        # work, whereas this makes O(n_lags) numpy calls over the whole panel.
+        n_windows = T - window + 1
+        if n_windows > 0 and window > n_lags:
+            # (n_windows, window) and (n_windows, window, N) zero-copy views.
+            f_wins     = _make_windows(f_np[:, None], window)[:, :, 0]
+            resid_wins = _make_windows(resid_np, window)
+            score_wins = f_wins[:, :, None] * resid_wins   # (n_windows, window, N)
+
+            xx = (f_wins ** 2).sum(axis=1)                 # (n_windows,) — X'X per window
+
+            # Gamma(0) plus Bartlett-weighted lags, summed over the window axis.
+            S = np.einsum('twn,twn->tn', score_wins, score_wins) / window
+            for lag in range(1, n_lags + 1):
+                w     = 1.0 - lag / (n_lags + 1)
+                gamma = np.einsum(
+                    'twn,twn->tn',
+                    score_wins[:, lag:, :],
+                    score_wins[:, :window - lag, :],
+                ) / window
+                S += 2 * w * gamma
+
+            # Sandwich: Var(beta) = (X'X)^{-1} S (X'X)^{-1}, with S scaled by n_obs.
+            var_beta = S * window / (xx[:, None] ** 2)
+            se_vals  = np.sqrt(np.maximum(var_beta, 0.0))   # (n_windows, N)
+
+            # NaN masking (consistent with issue #8 / _fill_window):
+            #   factor NaN  -> invalidate the whole window for every asset;
+            #   residual NaN -> invalidate only the affected asset column.
+            f_has_nan     = np.isnan(f_wins).any(axis=1)             # (n_windows,)
+            asset_has_nan = f_has_nan[:, None] | np.isnan(resid_wins).any(axis=1)
+            t_idx         = np.arange(n_windows) + window - 1
+            se[t_idx]     = np.where(asset_has_nan, np.nan, se_vals)
 
         if min_periods < window:
+            # Early windows have variable size (< window) — keep the loop.
             for t in range(min_periods - 1, window - 1):
                 _fill_window(t, f_np[:t + 1], resid_np[:t + 1])
 

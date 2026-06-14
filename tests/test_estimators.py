@@ -762,6 +762,122 @@ class TestHACSE:
 
         assert se["a1"].iloc[t] == pytest.approx(expected, rel=1e-10)
 
+    @staticmethod
+    def _loop_hac_se(residuals, factor_values, window, min_periods, n_lags):
+        """Reference per-window loop implementation (the pre-vectorization path)."""
+        resid_np = residuals.to_numpy(dtype=np.float64)
+        f_np     = factor_values.to_numpy(dtype=np.float64)
+        T, N     = resid_np.shape
+        se       = np.full((T, N), np.nan)
+
+        def _nw(f_w, e_w):
+            n_obs = len(f_w)
+            score = f_w[:, None] * e_w
+            xx    = f_w @ f_w
+            S     = np.einsum('ti,ti->i', score, score) / n_obs
+            for lag in range(1, n_lags + 1):
+                w     = 1.0 - lag / (n_lags + 1)
+                gamma = np.einsum('ti,ti->i', score[lag:], score[:-lag]) / n_obs
+                S    += 2 * w * gamma
+            return np.sqrt(np.maximum(S * n_obs / (xx ** 2), 0.0))
+
+        def _fill(t, f_w, e_w):
+            if np.isnan(f_w).any() or len(f_w) <= n_lags:
+                return
+            asset_nan = np.isnan(e_w).any(axis=0)
+            if asset_nan.all():
+                return
+            valid = ~asset_nan
+            se[t, valid] = _nw(f_w, e_w[:, valid])
+
+        for t in range(window - 1, T):
+            start = t - window + 1
+            _fill(t, f_np[start:t + 1], resid_np[start:t + 1])
+        if min_periods < window:
+            for t in range(min_periods - 1, window - 1):
+                _fill(t, f_np[:t + 1], resid_np[:t + 1])
+        return pd.DataFrame(se, index=residuals.index, columns=residuals.columns)
+
+    def test_vectorized_matches_loop(self):
+        """Vectorized rolling path is numerically identical to the loop path."""
+        np.random.seed(123)
+        T, N = 200, 5
+        residuals = pd.DataFrame(np.random.randn(T, N),
+                                 columns=[f"a{i}" for i in range(N)])
+        factor = pd.Series(np.random.randn(T), name="factor")
+
+        for window, n_lags in [(20, 3), (30, 5), (15, 1), (50, 8)]:
+            got = hac_se(
+                residuals=residuals, factor_values=factor,
+                window=window, min_periods=window, expanding=False, n_lags=n_lags,
+            )
+            ref = self._loop_hac_se(residuals, factor, window, window, n_lags)
+            assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True), \
+                f"mismatch for window={window}, n_lags={n_lags}"
+
+    def test_vectorized_matches_loop_with_nans(self):
+        """Vectorized path matches the loop when factor and residual NaNs are present."""
+        np.random.seed(321)
+        T, N = 150, 4
+        residuals = pd.DataFrame(np.random.randn(T, N),
+                                 columns=[f"a{i}" for i in range(N)])
+        residuals.iloc[40, 1] = np.nan      # per-asset residual NaN
+        residuals.iloc[80:83, 2] = np.nan
+        factor = pd.Series(np.random.randn(T), name="factor")
+        factor.iloc[100] = np.nan           # whole-window factor NaN
+
+        got = hac_se(
+            residuals=residuals, factor_values=factor,
+            window=25, min_periods=25, expanding=False, n_lags=4,
+        )
+        ref = self._loop_hac_se(residuals, factor, 25, 25, 4)
+        assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True)
+
+    def test_vectorized_matches_loop_min_periods_lt_window(self):
+        """Early (min_periods < window) windows still match the loop path."""
+        np.random.seed(7)
+        T, N = 120, 3
+        residuals = pd.DataFrame(np.random.randn(T, N),
+                                 columns=[f"a{i}" for i in range(N)])
+        factor = pd.Series(np.random.randn(T), name="factor")
+
+        got = hac_se(
+            residuals=residuals, factor_values=factor,
+            window=30, min_periods=15, expanding=False, n_lags=3,
+        )
+        ref = self._loop_hac_se(residuals, factor, 30, 15, 3)
+        assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True)
+
+    def test_expanding_matches_loop(self):
+        """Expanding path is unchanged (still the loop) and matches the reference."""
+        np.random.seed(11)
+        T, N = 80, 2
+        residuals = pd.DataFrame(np.random.randn(T, N), columns=["a0", "a1"])
+        factor = pd.Series(np.random.randn(T), name="factor")
+
+        # Reference expanding loop.
+        resid_np = residuals.to_numpy(dtype=np.float64)
+        f_np = factor.to_numpy(dtype=np.float64)
+        n_lags, min_periods = 3, 10
+        ref = np.full((T, N), np.nan)
+        for t in range(min_periods - 1, T):
+            f_w, e_w = f_np[:t + 1], resid_np[:t + 1]
+            if np.isnan(f_w).any() or len(f_w) <= n_lags:
+                continue
+            score = f_w[:, None] * e_w
+            xx = f_w @ f_w
+            S = np.einsum('ti,ti->i', score, score) / len(f_w)
+            for lag in range(1, n_lags + 1):
+                w = 1.0 - lag / (n_lags + 1)
+                S += 2 * w * np.einsum('ti,ti->i', score[lag:], score[:-lag]) / len(f_w)
+            ref[t] = np.sqrt(np.maximum(S * len(f_w) / (xx ** 2), 0.0))
+
+        got = hac_se(
+            residuals=residuals, factor_values=factor,
+            window=40, min_periods=min_periods, expanding=True, n_lags=n_lags,
+        )
+        assert np.allclose(got.to_numpy(), ref, equal_nan=True)
+
 
 class TestSolveBatch:
     """Tests for _solve_batch inf/NaN handling (issue #6)."""
