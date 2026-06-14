@@ -146,6 +146,49 @@ class RollingOLSResult:
         return self._control_betas[factor][control]
 
     # ------------------------------------------------------------------
+    # Factor mimicking returns (cross-sectional use case)
+    # ------------------------------------------------------------------
+
+    def get_factor_mimicking_returns(self, factor: str) -> pd.Series:
+        """
+        Time series of the estimated factor mimicking return for `factor`.
+        Shape: (T,) Series indexed by date.
+
+        Only meaningful when rOLS is used in the cross-sectional direction:
+          - factors = asset-level factor betas (N assets x K factors)
+          - targets = asset returns (N assets x 1)
+
+        In this case, the beta from get_beta(factor) is the cross-sectional
+        regression coefficient lambda_t — the return per unit of factor exposure
+        in the cross-section at each date t.
+
+        This is the g_t series in a pure-factor mimicking portfolio framework.
+
+        NOTE: requires transform() to have been called with a single target column.
+        Raises RuntimeError if multiple target columns were used.
+        """
+        self._check_factor(factor)
+        beta_df = self._betas[factor]
+        if beta_df.shape[1] != 1:
+            raise RuntimeError(
+                "get_factor_mimicking_returns() requires transform() to be called "
+                "with a single target column. "
+                f"Got {beta_df.shape[1]} columns: {beta_df.columns.tolist()}"
+            )
+        return beta_df.iloc[:, 0].rename(factor)
+
+    def get_all_factor_mimicking_returns(self) -> pd.DataFrame:
+        """
+        All factor mimicking return series as a (T, K) DataFrame.
+        Column names match factor names from fit().
+        See get_factor_mimicking_returns() for full documentation.
+        """
+        return pd.concat(
+            {f: self.get_factor_mimicking_returns(f) for f in self.factor_cols},
+            axis=1,
+        )
+
+    # ------------------------------------------------------------------
     # HAC standard errors (on demand)
     # ------------------------------------------------------------------
 
