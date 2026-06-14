@@ -158,13 +158,20 @@ All results are indexed by time (rows) and target (columns).
 result.get_beta("f1")          # DataFrame (T x N_targets)
 result.get_signal("f1")        # beta_t * factor_t (or lagged)
 result.get_r2("f1")            # rolling R²
-result.get_residuals("f1")     # regression residuals
+result.get_residuals("f1")     # regression residuals (FWL step 3)
+result.get_factor_adjusted_returns()    # controls removed only (FWL step 2)
 
 result.get_se("f1")            # Newey-West SE — requires hac_lags
 result.get_tstat("f1")         # beta / SE
 
 result.get_control_beta("f1", "ctrl1")  # requires return_control_betas=True
 ```
+
+`get_factor_adjusted_returns()` returns asset returns with only the **controls**
+partialled out (`e_it = r_it - B_t' * ctrl_t`, FWL step 2) — not specific to any
+factor, so it takes no argument. This differs from `get_residuals(factor)`, which
+additionally removes the narrative `factor` (FWL step 3). If no controls were
+provided at `fit()`, it returns the original asset returns.
 
 `get_control_beta(factor, control)` returns the control's **joint** rolling beta —
 its coefficient from the full regression, recovered via Frisch-Waugh-Lovell

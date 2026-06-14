@@ -60,6 +60,9 @@ class RollingOLSResult:
     # raw factor values needed for HAC: {factor -> Series}
     _factor_values: Dict[str, pd.Series] = field(default_factory=dict)
 
+    # asset returns residualized against controls (FWL step 2): DataFrame(T x N_assets)
+    _factor_adjusted_returns: Optional[pd.DataFrame] = field(default=None)
+
     # validate factor name and raise KeyError if not found
     def _check_factor(self, factor: str) -> None:
         if factor not in self.factor_cols:
@@ -93,9 +96,28 @@ class RollingOLSResult:
         """
         Rolling regression residuals: y_resid_t - beta_t * f_resid_t.
         Shape: (T, N_assets). Used internally for HAC.
+
+        This is the FWL step 3 output — asset returns with BOTH the controls and
+        the narrative `factor` removed. For asset returns with only the controls
+        removed (FWL step 2), use get_factor_adjusted_returns() instead.
         """
         self._check_factor(factor)
         return self._residuals[factor]
+
+    def get_factor_adjusted_returns(self) -> pd.DataFrame:
+        """
+        Asset returns residualized against controls (FWL step 2 output).
+        Shape: (T, N_assets).
+
+        This is e_it = r_it - B_t' * ctrl_t — asset returns with the effect of
+        control variables removed. It is NOT the same as get_residuals(factor),
+        which further removes the narrative factor (FWL step 3).
+
+        If no controls were provided at fit(), returns the original asset returns.
+        """
+        if self._factor_adjusted_returns is None:
+            raise RuntimeError("factor_adjusted_returns not available.")
+        return self._factor_adjusted_returns
 
     def get_control_beta(self, factor: str, control: str) -> pd.DataFrame:
         """

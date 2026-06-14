@@ -325,6 +325,11 @@ class RollingOLS:
             hac_lags=self.hac_lags,
         )
 
+        # FWL step 2 output: asset returns residualized against controls (or the
+        # original assets when no controls were fitted). Store a reference, not a
+        # copy — exposed via result.get_factor_adjusted_returns().
+        result._factor_adjusted_returns = asset_resids
+
         # Precompute asset residual variance once — shared across all factors
         var_y = _rolling_var(asset_resids, self.window, self.min_periods, self.expanding)
 

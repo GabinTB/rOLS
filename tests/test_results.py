@@ -331,6 +331,65 @@ class TestRollingOLSResultRanges:
         assert beta.shape == signal.shape
 
 
+class TestRollingOLSResultFactorAdjustedReturns:
+    """Tests for get_factor_adjusted_returns()."""
+
+    def _data(self, T=120):
+        np.random.seed(42)
+        factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
+        controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
+        assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
+        return factors, controls, assets
+
+    def test_shape_with_controls(self):
+        """Returns a DataFrame of shape (T, N_assets) when controls are present."""
+        factors, controls, assets = self._data()
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(factors, assets, controls=controls)
+
+        far = result.get_factor_adjusted_returns()
+        assert isinstance(far, pd.DataFrame)
+        assert far.shape == (120, 3)
+        assert list(far.columns) == ["a1", "a2", "a3"]
+
+    def test_differs_from_original_with_controls(self):
+        """With controls, factor-adjusted returns differ from raw asset returns."""
+        factors, controls, assets = self._data()
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(factors, assets, controls=controls)
+
+        far = result.get_factor_adjusted_returns()
+        # Where both are defined, residualized values should not equal raw returns.
+        assert not np.allclose(
+            far.dropna().values,
+            assets.astype(far.dtypes.iloc[0]).loc[far.dropna().index].values,
+        )
+
+    def test_equals_original_without_controls(self):
+        """Without controls, factor-adjusted returns equal the original returns."""
+        factors, _, assets = self._data()
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(factors, assets)
+
+        far = result.get_factor_adjusted_returns()
+        pd.testing.assert_frame_equal(
+            far, assets.astype(far.dtypes.iloc[0]), check_dtype=False
+        )
+
+    def test_differs_from_regression_residuals(self):
+        """FWL step 2 (controls only) differs from get_residuals (step 3)."""
+        factors, controls, assets = self._data()
+        ols = RollingOLS(window=20)
+        result = ols.fit_transform(factors, assets, controls=controls)
+
+        far = result.get_factor_adjusted_returns()
+        resids = result.get_residuals("f1")
+        assert far.shape == resids.shape
+        # The two quantities are different — step 3 removes the factor too.
+        mask = far.notna() & resids.notna()
+        assert not np.allclose(far.values[mask.values], resids.values[mask.values])
+
+
 class TestRollingOLSResultControlBetas:
     """Tests for get_control_beta()."""
 
