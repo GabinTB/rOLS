@@ -166,6 +166,9 @@ result.get_se("f1")            # Newey-West SE — requires hac_lags
 result.get_tstat("f1")         # beta / SE
 
 result.get_control_beta("f1", "ctrl1")  # requires return_control_betas=True
+
+result.get_factor_mimicking_returns("f1")    # Series (T,) — cross-sectional λ_t
+result.get_all_factor_mimicking_returns()    # DataFrame (T x K)
 ```
 
 `get_factor_adjusted_returns()` returns asset returns with only the **controls**
@@ -268,6 +271,34 @@ ols = RollingOLS(window=60, lag_signal=True)
 result = ols.fit(df[["f1"]]).transform(df[targets])
 signal = result.get_signal("f1")
 ```
+
+### Cross-sectional factor mimicking returns
+
+rOLS is usually run in the **time-series direction** (factors as regressors,
+asset returns as targets). Flip the orientation and it runs a **cross-sectional**
+regression instead: at each date the assets are the observations, their factor
+betas are the regressors, and their returns are the single target. The estimated
+coefficient `λ_t` is then the **factor mimicking return** `g_t` — the return per
+unit of factor exposure in the cross-section — the central quantity in a
+Fama-MacBeth / pure-factor portfolio pipeline.
+
+```python
+# Cross-sectional: assets as observations, betas as regressors, returns as target
+# asset_betas : (T x K) — each column is a factor's cross-sectional exposure
+# asset_return: (T x 1) — the single target column
+ols = RollingOLS(window=1)               # or expanding for a growing panel
+ols.fit(asset_betas)                     # K factors as regressors
+result = ols.transform(asset_return[["returns"]])   # single target column
+
+g     = result.get_factor_mimicking_returns("f1")   # Series (T,) — λ_t for f1
+g_all = result.get_all_factor_mimicking_returns()   # DataFrame (T x K)
+```
+
+The single-target requirement is enforced: `get_factor_mimicking_returns()`
+raises `RuntimeError` if `transform()` was called with more than one target
+column (i.e. used in the time-series direction). Downstream steps — factor
+timing regressions, spanning tests, factor covariance estimation — consume the
+`g_t` series directly.
 
 ---
 
