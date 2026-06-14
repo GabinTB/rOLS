@@ -87,6 +87,7 @@ def _residualize_single(
     min_periods: int,
     ridge_term: np.ndarray,
     x_row_valid: np.ndarray,
+    weights: np.ndarray | None = None,
 ) -> tuple[np.ndarray, int]:
     """
     NaN-robust rolling OLS residuals for a single target column.
@@ -103,6 +104,9 @@ def _residualize_single(
     min_periods  : minimum clean rows required
     ridge_term   : (k, k) ridge regularization matrix
     x_row_valid  : (T,) bool — rows where X has no NaN (precomputed)
+    weights      : (window,) array — per-position observation weights
+        (oldest-to-newest), or None for equal weighting. After NaN rows are
+        masked out, the surviving weights are renormalized to sum to 1.
 
     Returns
     -------
@@ -130,9 +134,16 @@ def _residualize_single(
         Xw_c = X_np[start:end][row_ok]
         yw_c = y_w[row_ok]
 
-        XtX = Xw_c.T @ Xw_c + ridge_term
+        if weights is not None:
+            w_c = weights[row_ok]
+            w_c = w_c / w_c.sum()
+            XtX = Xw_c.T @ (Xw_c * w_c[:, None]) + ridge_term
+            rhs = Xw_c.T @ (yw_c * w_c)
+        else:
+            XtX = Xw_c.T @ Xw_c + ridge_term
+            rhs = Xw_c.T @ yw_c
         try:
-            beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
+            beta_t = np.linalg.solve(XtX, rhs)
             resid_col[t_idx] = y_col[t_idx] - X_np[t_idx] @ beta_t
         except np.linalg.LinAlgError:
             n_singular += 1
@@ -148,9 +159,16 @@ def _residualize_single(
                 continue
             Xw_c = X_np[:t + 1][row_ok]
             yw_c = y_w[row_ok]
-            XtX = Xw_c.T @ Xw_c + ridge_term
+            if weights is not None:
+                w_c = weights[-(t + 1):][row_ok]
+                w_c = w_c / w_c.sum()
+                XtX = Xw_c.T @ (Xw_c * w_c[:, None]) + ridge_term
+                rhs = Xw_c.T @ (yw_c * w_c)
+            else:
+                XtX = Xw_c.T @ Xw_c + ridge_term
+                rhs = Xw_c.T @ yw_c
             try:
-                beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
+                beta_t = np.linalg.solve(XtX, rhs)
                 resid_col[t] = y_col[t] - X_np[t] @ beta_t
             except np.linalg.LinAlgError:
                 n_singular += 1
@@ -170,12 +188,25 @@ def rolling_residualize(
     expanding: bool,
     ridge_lambda: float = 0.0,
     warn_singular: bool = True,
+    weights: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """
     Compute rolling OLS (or Ridge) residuals: y_t - X_t @ beta_t for each t.
 
     Ridge adds lambda * I to X'X before solving, shrinking betas toward zero.
     Set ridge_lambda=0.0 for standard OLS (default).
+
+    Observation weighting
+    ---------------------
+    If ``weights`` (length ``window``, oldest-to-newest) is provided, each
+    window is solved as a weighted least squares problem: the gram matrix
+    accumulates X'WX and X'Wy instead of X'X and X'y. This is how EWMA
+    observation weighting (``RollingOLS(ewma_halflife=...)``) is threaded
+    through the Frisch-Waugh residualization. When rows are dropped for NaN
+    handling, the surviving weights are renormalized to sum to 1 so the
+    weighting scheme is unaffected by missing data. ``weights=None`` (default)
+    is equal weighting and is bit-for-bit identical to the unweighted path.
+    Not supported with ``expanding=True``.
 
     NaN handling
     ------------
@@ -212,11 +243,16 @@ def rolling_residualize(
     warn_singular : if True (default), emit a single aggregated RuntimeWarning
         when one or more windows are singular (estimates set to NaN). Set False
         to suppress (e.g. when singular warm-up windows are expected).
+    weights      : (window,) array of per-position observation weights
+        (oldest-to-newest), or None for equal weighting. Renormalized over the
+        surviving rows after NaN masking. Not supported with expanding=True.
 
     Returns
     -------
     pd.DataFrame, same shape/index/columns as y
     """
+    if weights is not None and expanding:
+        raise ValueError("weights are not supported with expanding=True")
     y_np = y.to_numpy(dtype=np.float64)
     X_np = X.to_numpy(dtype=np.float64)
     T, N = y_np.shape
@@ -262,9 +298,16 @@ def rolling_residualize(
         has_nan_X = np.isnan(Xw).any(axis=(1, 2))
         valid     = ~has_nan_X
 
-        XtX = np.einsum('twi,twj->tij', Xw, Xw)
+        if weights is not None:
+            # Weighted gram matrix: X'WX and X'Wy. Apply weights to one side
+            # of the einsum so the accumulation sums w_t * x_t * (.)_t.
+            Xw_w = Xw * weights[None, :, None]   # (n, window, k)
+            XtX  = np.einsum('twi,twj->tij', Xw_w, Xw)
+            XtY  = np.einsum('twi,twn->tin', Xw_w, yw)
+        else:
+            XtX = np.einsum('twi,twj->tij', Xw, Xw)
+            XtY = np.einsum('twi,twn->tin', Xw, yw)
         XtX[valid] += ridge_term
-        XtY = np.einsum('twi,twn->tin', Xw, yw)
 
         betas = np.full((n_windows, k, N), np.nan)
         if valid.any():
@@ -280,9 +323,16 @@ def rolling_residualize(
                 Xw_t, yw_t = X_np[:t + 1], y_np[:t + 1]
                 if np.isnan(Xw_t).any():
                     continue
-                XtX_t = Xw_t.T @ Xw_t + ridge_term
+                if weights is not None:
+                    w_t = weights[-(t + 1):]
+                    w_t = w_t / w_t.sum()
+                    XtX_t = Xw_t.T @ (Xw_t * w_t[:, None]) + ridge_term
+                    rhs_t = Xw_t.T @ (yw_t * w_t[:, None])
+                else:
+                    XtX_t = Xw_t.T @ Xw_t + ridge_term
+                    rhs_t = Xw_t.T @ yw_t
                 try:
-                    resid[t] = y_np[t] - X_np[t] @ np.linalg.solve(XtX_t, Xw_t.T @ yw_t)
+                    resid[t] = y_np[t] - X_np[t] @ np.linalg.solve(XtX_t, rhs_t)
                 except np.linalg.LinAlgError:
                     n_singular += 1
 
@@ -320,9 +370,20 @@ def rolling_residualize(
             Xw_masked = np.where(valid_j[:, :, None], Xw, 0.0)   # (n_windows, window, k)
             yw_masked = np.where(valid_j, yw_j, 0.0)             # (n_windows, window)
 
-            XtX_j = np.einsum('twi,twj->tij', Xw_masked, Xw_masked)  # (n_windows, k, k)
+            if weights is not None:
+                # Per-window weights restricted to the surviving (non-NaN) rows,
+                # renormalized to sum to 1. Insufficient windows have zero sum
+                # but are filtered out by `sufficient`, so the divide is guarded.
+                wm    = np.where(valid_j, weights[None, :], 0.0)       # (n_windows, window)
+                wsum  = wm.sum(axis=1, keepdims=True)                  # (n_windows, 1)
+                wn    = np.divide(wm, wsum, out=np.zeros_like(wm), where=wsum > 0)
+                Xw_w  = Xw_masked * wn[:, :, None]                    # (n_windows, window, k)
+                XtX_j = np.einsum('twi,twj->tij', Xw_w, Xw_masked)    # (n_windows, k, k)
+                XtY_j = np.einsum('twi,tw->ti', Xw_w, yw_masked)[:, :, None]
+            else:
+                XtX_j = np.einsum('twi,twj->tij', Xw_masked, Xw_masked)  # (n_windows, k, k)
+                XtY_j = np.einsum('twi,tw->ti', Xw_masked, yw_masked)[:, :, None]
             XtX_j[sufficient] += ridge_term
-            XtY_j = np.einsum('twi,tw->ti', Xw_masked, yw_masked)[:, :, None]  # (n_windows, k, 1)
 
             betas_j = np.full((n_windows, k, 1), np.nan)
             # Aggregate the singular warning once for the whole call rather than
@@ -350,9 +411,16 @@ def rolling_residualize(
                         continue
                     Xw_c  = X_np[:t + 1][row_ok]
                     yw_c  = y_w[row_ok]
-                    XtX_t = Xw_c.T @ Xw_c + ridge_term
+                    if weights is not None:
+                        w_c = weights[-(t + 1):][row_ok]
+                        w_c = w_c / w_c.sum()
+                        XtX_t = Xw_c.T @ (Xw_c * w_c[:, None]) + ridge_term
+                        rhs_t = Xw_c.T @ (yw_c * w_c)
+                    else:
+                        XtX_t = Xw_c.T @ Xw_c + ridge_term
+                        rhs_t = Xw_c.T @ yw_c
                     try:
-                        beta_t = np.linalg.solve(XtX_t, Xw_c.T @ yw_c)
+                        beta_t = np.linalg.solve(XtX_t, rhs_t)
                         resid[t, j] = y_np[t, j] - X_np[t] @ beta_t
                     except np.linalg.LinAlgError:
                         n_singular += 1
@@ -372,6 +440,7 @@ def rolling_residualize(
                 min_periods=min_periods,
                 ridge_term=ridge_term,
                 x_row_valid=x_row_valid,
+                weights=weights,
             )
             n_singular += col_singular
 
@@ -460,6 +529,13 @@ def hac_se(
     The sandwich estimator is:
         Var(beta) = (X'X)^{-1} * S * (X'X)^{-1}
     where S is the Newey-West long-run variance of X * eps.
+
+    Note
+    ----
+    HAC standard errors are computed with equal weights regardless of
+    ``ewma_halflife``. EWMA-weighted HAC is not yet implemented, so SEs from a
+    model fitted with EWMA observation weighting still treat every observation
+    in the window equally.
 
     Parameters
     ----------

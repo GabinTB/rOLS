@@ -60,6 +60,108 @@ def _rolling_var(
     return base.var()
 
 
+def _ewma_weights(halflife: int, window: int) -> np.ndarray:
+    """
+    Exponential decay weights over a window, oldest-to-newest, summing to 1.
+
+    The weight of an observation `lag` steps before the most recent is
+    proportional to (1 - alpha)**lag where alpha = 1 - 2**(-1/halflife), so an
+    observation `halflife` steps in the past carries half the weight of the
+    newest one. Index 0 is the oldest observation, index window-1 the newest.
+    """
+    alpha = 1 - np.exp(-np.log(2) / halflife)
+    w = (1 - alpha) ** np.arange(window - 1, -1, -1)
+    return w / w.sum()
+
+
+def _ewma_cov_series_df(
+    f: pd.Series,
+    assets: pd.DataFrame,
+    weights: np.ndarray,
+    window: int,
+    min_periods: int,
+) -> pd.DataFrame:
+    """
+    Rolling EWMA-weighted covariance of a Series ``f`` against each column of
+    ``assets`` — the weighted analogue of ``_rolling_cov_series_df``.
+
+    Uses biased weighted moments (no Bessel correction): with weights summing
+    to 1, cov = sum_t w_t (f_t - f_bar)(a_t - a_bar). The normalization is
+    shared with ``_ewma_var`` so beta = cov / var and R² = cov² / (var_f var_a)
+    stay consistent. NaN rows (in ``f`` or an asset) are dropped per window and
+    per asset, with the surviving weights renormalized to sum to 1.
+    """
+    f_np = f.to_numpy(dtype=np.float64)
+    a_np = assets.to_numpy(dtype=np.float64)
+    T, N = a_np.shape
+    out = np.full((T, N), np.nan)
+
+    for t in range(min_periods - 1, T):
+        L = min(window, t + 1)
+        sl = slice(t - L + 1, t + 1)
+        w_t = weights[-L:]                                  # (L,)
+        f_w = f_np[sl]                                      # (L,)
+        a_w = a_np[sl]                                      # (L, N)
+
+        valid = (~np.isnan(f_w))[:, None] & ~np.isnan(a_w)  # (L, N)
+        wm    = np.where(valid, w_t[:, None], 0.0)          # (L, N)
+        wsum  = wm.sum(axis=0)                              # (N,)
+        ok    = (valid.sum(axis=0) >= min_periods) & (wsum > 0)
+        if not ok.any():
+            continue
+        wn   = wm / np.where(wsum > 0, wsum, 1.0)
+        fbar = (wn * np.where(valid, f_w[:, None], 0.0)).sum(axis=0)
+        abar = (wn * np.where(valid, a_w, 0.0)).sum(axis=0)
+        fc   = np.where(valid, f_w[:, None] - fbar, 0.0)
+        ac   = np.where(valid, a_w - abar, 0.0)
+        cov  = (wn * fc * ac).sum(axis=0)
+        out[t, ok] = cov[ok]
+
+    return pd.DataFrame(out, index=assets.index, columns=assets.columns)
+
+
+def _ewma_var(
+    x: pd.Series | pd.DataFrame,
+    weights: np.ndarray,
+    window: int,
+    min_periods: int,
+) -> pd.Series | pd.DataFrame:
+    """
+    Rolling EWMA-weighted variance — the weighted analogue of ``_rolling_var``.
+
+    Biased weighted variance (weights sum to 1): var = sum_t w_t (x_t - x_bar)².
+    Shares its normalization with ``_ewma_cov_series_df``. NaN rows are dropped
+    per window/column and the surviving weights renormalized to sum to 1.
+    """
+    is_series = isinstance(x, pd.Series)
+    df = x.to_frame() if is_series else x
+    x_np = df.to_numpy(dtype=np.float64)
+    T, M = x_np.shape
+    out = np.full((T, M), np.nan)
+
+    for t in range(min_periods - 1, T):
+        L = min(window, t + 1)
+        sl = slice(t - L + 1, t + 1)
+        w_t = weights[-L:]                          # (L,)
+        x_w = x_np[sl]                              # (L, M)
+
+        valid = ~np.isnan(x_w)
+        wm    = np.where(valid, w_t[:, None], 0.0)
+        wsum  = wm.sum(axis=0)
+        ok    = (valid.sum(axis=0) >= min_periods) & (wsum > 0)
+        if not ok.any():
+            continue
+        wn   = wm / np.where(wsum > 0, wsum, 1.0)
+        xbar = (wn * np.where(valid, x_w, 0.0)).sum(axis=0)
+        xc   = np.where(valid, x_w - xbar, 0.0)
+        var  = (wn * xc * xc).sum(axis=0)
+        out[t, ok] = var[ok]
+
+    if is_series:
+        return pd.Series(out[:, 0], index=df.index, name=x.name)
+    return pd.DataFrame(out, index=df.index, columns=df.columns)
+
+
 class RollingOLS:
     """
     Vectorized rolling (or expanding) time-series OLS / Ridge regression.
@@ -78,6 +180,16 @@ class RollingOLS:
     lambda_ : float
         Ridge regularization strength. 0.0 = standard OLS (default).
         Adding a small value (e.g. 1e-4) stabilizes collinear regressors.
+    ewma_halflife : int, optional
+        If set, observations within each window are exponentially weighted so
+        recent data carries more weight: an observation `ewma_halflife` steps
+        in the past gets half the weight of the most recent one. Affects the
+        rolling betas, R², and the Frisch-Waugh residualization. If None
+        (default), all observations are weighted equally and the equal-weight
+        fast paths are used unchanged (zero performance impact). Cannot be
+        combined with expanding=True — expanding windows have variable length,
+        so the weight vector cannot be precomputed. Note: HAC standard errors
+        are always computed with equal weights (see hac_se).
     adj_r2 : bool
         Compute adjusted R² instead of R².
     lag_signal : bool
@@ -151,11 +263,20 @@ class RollingOLS:
         dtype: str = "float32",
         asset_chunk_size: int = 100,
         warn_singular: bool = True,
+        ewma_halflife: Optional[int] = None,
     ) -> None:
+        if ewma_halflife is not None and expanding:
+            raise ValueError(
+                "ewma_halflife cannot be combined with expanding=True: expanding "
+                "windows have variable length, so the EWMA weight vector cannot "
+                "be precomputed."
+            )
+
         self.window          = window
         self.min_periods     = min_periods if min_periods is not None else window
         self.expanding       = expanding
         self.lambda_         = lambda_
+        self.ewma_halflife   = ewma_halflife
         self.adj_r2          = adj_r2
         self.lag_signal      = lag_signal
         self.hac_lags        = hac_lags
@@ -170,6 +291,12 @@ class RollingOLS:
         self._factors_raw:    Optional[pd.DataFrame] = None  # original, for signal
         self._factor_resids:  Optional[pd.DataFrame] = None  # after FWL step 1
         self._controls_fitted: Optional[pd.DataFrame] = None
+
+    def _weights(self) -> Optional[np.ndarray]:
+        """EWMA observation weights for one full window, or None for equal weights."""
+        if self.ewma_halflife is None:
+            return None
+        return _ewma_weights(self.ewma_halflife, self.window)
 
     # ------------------------------------------------------------------
     # fit
@@ -248,6 +375,7 @@ class RollingOLS:
                 expanding=self.expanding,
                 ridge_lambda=self.lambda_,
                 warn_singular=self.warn_singular,
+                weights=self._weights(),
             )
         else:
             self._control_cols    = []
@@ -306,6 +434,7 @@ class RollingOLS:
                         expanding=self.expanding,
                         ridge_lambda=self.lambda_,
                         warn_singular=self.warn_singular,
+                        weights=self._weights(),
                     )
                     for chunk in chunks
                 ],
@@ -330,14 +459,25 @@ class RollingOLS:
         # copy — exposed via result.get_factor_adjusted_returns().
         result._factor_adjusted_returns = asset_resids
 
-        # Precompute asset residual variance once — shared across all factors
-        var_y = _rolling_var(asset_resids, self.window, self.min_periods, self.expanding)
+        # Precompute asset residual variance once — shared across all factors.
+        # With EWMA weighting, use the custom weighted moments (pandas built-ins
+        # don't support per-observation weights); otherwise the equal-weight path.
+        weights = self._weights()
+
+        if weights is not None:
+            var_y = _ewma_var(asset_resids, weights, self.window, self.min_periods)
+        else:
+            var_y = _rolling_var(asset_resids, self.window, self.min_periods, self.expanding)
 
         for fac in self._factor_cols:
             f_resid = self._factor_resids[fac]
 
-            cov_af    = _rolling_cov_series_df(f_resid, asset_resids, self.window, self.min_periods, self.expanding)
-            var_f     = _rolling_var(f_resid, self.window, self.min_periods, self.expanding)
+            if weights is not None:
+                cov_af = _ewma_cov_series_df(f_resid, asset_resids, weights, self.window, self.min_periods)
+                var_f  = _ewma_var(f_resid, weights, self.window, self.min_periods)
+            else:
+                cov_af = _rolling_cov_series_df(f_resid, asset_resids, self.window, self.min_periods, self.expanding)
+                var_f  = _rolling_var(f_resid, self.window, self.min_periods, self.expanding)
             var_f_safe = var_f.where(var_f.abs() > self.denom_tol)
 
             # Beta
@@ -385,6 +525,7 @@ class RollingOLS:
                         expanding=self.expanding,
                         ridge_lambda=self.lambda_,
                         warn_singular=self.warn_singular,
+                        weights=weights,
                     )
                     ctrl_j_resid = rolling_residualize(
                         y=self._controls_fitted[[ctrl]],
@@ -394,13 +535,18 @@ class RollingOLS:
                         expanding=self.expanding,
                         ridge_lambda=self.lambda_,
                         warn_singular=self.warn_singular,
+                        weights=weights,
                     )[ctrl]
                 else:
                     asset_resid_j = assets
                     ctrl_j_resid = self._controls_fitted[ctrl]
 
-                cov_ac = _rolling_cov_series_df(ctrl_j_resid, asset_resid_j, self.window, self.min_periods, self.expanding)
-                var_c = _rolling_var(ctrl_j_resid, self.window, self.min_periods, self.expanding)
+                if weights is not None:
+                    cov_ac = _ewma_cov_series_df(ctrl_j_resid, asset_resid_j, weights, self.window, self.min_periods)
+                    var_c  = _ewma_var(ctrl_j_resid, weights, self.window, self.min_periods)
+                else:
+                    cov_ac = _rolling_cov_series_df(ctrl_j_resid, asset_resid_j, self.window, self.min_periods, self.expanding)
+                    var_c  = _rolling_var(ctrl_j_resid, self.window, self.min_periods, self.expanding)
                 var_c_safe = var_c.where(var_c.abs() > self.denom_tol)
                 control_betas[ctrl] = cov_ac.div(var_c_safe, axis=0)
 

@@ -88,6 +88,7 @@ for f in factors:
 | `min_periods` | `window` | Minimum observations to produce a result |
 | `expanding` | `False` | Use expanding window instead of rolling |
 | `lambda_` | `0.0` | Ridge regularization. `0` = standard OLS |
+| `ewma_halflife` | `None` | Exponentially weight observations within each window (half-life in periods). `None` = equal weighting. Not compatible with `expanding=True` |
 | `adj_r2` | `False` | Compute adjusted R² |
 | `lag_signal` | `False` | Use `beta_{t-1} * factor_t` instead of `beta_t * factor_t` |
 | `hac_lags` | `None` | Newey-West lags for HAC SE. `None` disables HAC |
@@ -214,6 +215,27 @@ result = ols.fit(df[["f1", "f2"]]).transform(df[targets])
 se    = result.get_se("f1")      # Newey-West SE
 tstat = result.get_tstat("f1")  # t-statistics
 ```
+
+### EWMA observation weighting
+
+By default every observation in a window counts equally. When recent data should
+carry more weight — e.g. narrative-beta estimation in finance, where the latest
+behaviour matters most — set `ewma_halflife` to weight observations
+exponentially. An observation `ewma_halflife` periods in the past gets half the
+weight of the most recent one.
+
+```python
+# ~3-month half-life inside a 1-year window
+ols = RollingOLS(window=252, ewma_halflife=63)
+result = ols.fit(df[["f1", "f2"]]).transform(df[targets])
+```
+
+The weighting flows through the betas, R², and the Frisch-Waugh residualization
+(weighted least squares per window). NaN rows are dropped per window and the
+surviving weights renormalized to sum to 1, so missing data does not distort the
+scheme. `ewma_halflife` cannot be combined with `expanding=True` (an expanding
+window has no fixed length to precompute weights over), and HAC standard errors
+are still computed with equal weights.
 
 ### Orthogonalization with importance ordering
 
