@@ -472,6 +472,114 @@ class TestRollingOLSModes:
         assert (valid <= 1.0).all()
 
 
+class TestRollingOLSEWMA:
+    """Tests for EWMA observation weighting (issue #1)."""
+
+    def test_ewma_halflife_stored(self):
+        """ewma_halflife is stored on the constructor; defaults to None."""
+        assert RollingOLS().ewma_halflife is None
+        assert RollingOLS(ewma_halflife=63).ewma_halflife == 63
+
+    def test_ewma_with_expanding_raises(self):
+        """ewma_halflife combined with expanding=True raises ValueError."""
+        with pytest.raises(ValueError, match="expanding"):
+            RollingOLS(window=20, expanding=True, ewma_halflife=10)
+
+    def test_ewma_betas_differ_from_equal_weight(self):
+        """EWMA betas differ from the equal-weight betas."""
+        np.random.seed(42)
+        T = 200
+        factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
+        assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
+
+        equal = RollingOLS(window=60).fit_transform(factors, assets)
+        ewma = RollingOLS(window=60, ewma_halflife=15).fit_transform(factors, assets)
+
+        beta_eq = equal.get_beta("f1")
+        beta_ew = ewma.get_beta("f1")
+        # Same shape/index/columns, materially different values.
+        assert beta_eq.shape == beta_ew.shape
+        mask = beta_eq.notna() & beta_ew.notna()
+        assert mask.values.any()
+        diff = (beta_eq.values[mask.values] - beta_ew.values[mask.values])
+        assert np.abs(diff).mean() > 1e-3
+
+    def test_ewma_none_unchanged_vs_baseline(self):
+        """ewma_halflife=None is identical to the existing equal-weight path."""
+        np.random.seed(7)
+        T = 150
+        factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
+        controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
+        assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
+
+        baseline = RollingOLS(window=40).fit_transform(factors, assets, controls=controls)
+        explicit = RollingOLS(window=40, ewma_halflife=None).fit_transform(
+            factors, assets, controls=controls
+        )
+        for fac in ["f1", "f2"]:
+            pd.testing.assert_frame_equal(
+                baseline.get_beta(fac), explicit.get_beta(fac)
+            )
+            pd.testing.assert_frame_equal(
+                baseline.get_r2(fac), explicit.get_r2(fac)
+            )
+
+    def test_ewma_beta_shape_and_index(self):
+        """EWMA betas have correct shape, columns, and index."""
+        np.random.seed(1)
+        T = 120
+        idx = pd.date_range("2020-01-01", periods=T, freq="D")
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"], index=idx)
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"], index=idx)
+
+        result = RollingOLS(window=30, ewma_halflife=10).fit_transform(factors, assets)
+        beta = result.get_beta("f1")
+        assert beta.shape == (T, 2)
+        assert list(beta.columns) == ["a1", "a2"]
+        assert beta.index.equals(idx)
+
+    def test_ewma_beta_matches_manual_weighted_regression(self):
+        """EWMA beta equals the weighted univariate slope cov_w/var_w."""
+        from rols.model import _ewma_weights
+
+        np.random.seed(2)
+        T, window, hl = 80, 30, 8
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
+
+        result = RollingOLS(
+            window=window, ewma_halflife=hl, dtype="float64"
+        ).fit_transform(factors, assets)
+        beta = result.get_beta("f1")["a1"]
+
+        # Manual weighted slope for the final window.
+        t = T - 1
+        w = _ewma_weights(hl, window)
+        f_w = factors["f1"].to_numpy()[t - window + 1: t + 1]
+        a_w = assets["a1"].to_numpy()[t - window + 1: t + 1]
+        fbar = (w * f_w).sum()
+        abar = (w * a_w).sum()
+        cov = (w * (f_w - fbar) * (a_w - abar)).sum()
+        var = (w * (f_w - fbar) ** 2).sum()
+        expected = cov / var
+
+        assert beta.iloc[t] == pytest.approx(expected, rel=1e-9)
+
+    def test_ewma_handles_nan_assets(self):
+        """EWMA path tolerates NaN in assets without crashing."""
+        np.random.seed(3)
+        T = 120
+        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
+        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
+        assets.iloc[10:15, 0] = np.nan
+
+        result = RollingOLS(window=30, ewma_halflife=10).fit_transform(factors, assets)
+        beta = result.get_beta("f1")
+        # a1 is NaN at the masked prediction points but defined elsewhere.
+        assert beta["a1"].iloc[10:15].isna().all()
+        assert beta["a1"].notna().any()
+
+
 class TestRollingOLSEdgeCases:
     """Tests for edge cases."""
 

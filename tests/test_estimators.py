@@ -13,6 +13,7 @@ from rols.estimators import (
     hac_se,
     _solve_batch,
 )
+from rols.model import _ewma_weights
 
 
 class TestRollingResidualize:
@@ -344,6 +345,161 @@ class TestVectorizedNaNRobustPath:
         assert np.isnan(result.iloc[40, 0])
         # A window ending before the NaN row (t=39, rows [20:40)) is unaffected.
         assert not np.isnan(result.iloc[39, 0])
+
+
+class TestEWMAWeights:
+    """Tests for the EWMA weight vector helper."""
+
+    def test_weights_sum_to_one(self):
+        w = _ewma_weights(halflife=10, window=50)
+        assert w.shape == (50,)
+        assert w.sum() == pytest.approx(1.0)
+
+    def test_weights_increase_toward_present(self):
+        """Index 0 is oldest (smallest weight), index -1 newest (largest)."""
+        w = _ewma_weights(halflife=10, window=50)
+        assert np.all(np.diff(w) > 0)
+        assert w[-1] > w[0]
+
+    def test_halflife_property(self):
+        """An observation `halflife` steps back gets half the newest weight."""
+        hl, window = 8, 40
+        w = _ewma_weights(halflife=hl, window=window)
+        # newest is w[-1]; `hl` steps before newest is w[-1 - hl]
+        assert w[-1 - hl] / w[-1] == pytest.approx(0.5)
+
+
+class TestWeightedResidualize:
+    """Tests for the `weights` argument to rolling_residualize (EWMA)."""
+
+    def test_weighted_differs_from_unweighted(self):
+        """Weighted residuals differ from equal-weight residuals."""
+        np.random.seed(11)
+        T = 80
+        y = pd.DataFrame(np.random.randn(T, 2), columns=["y1", "y2"])
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+        w = _ewma_weights(halflife=5, window=20)
+
+        unweighted = rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False
+        )
+        weighted = rolling_residualize(
+            y=y, X=X, window=20, min_periods=20, expanding=False, weights=w
+        )
+        assert not np.allclose(
+            unweighted.to_numpy(), weighted.to_numpy(), equal_nan=True
+        )
+
+    def test_weights_none_matches_baseline(self):
+        """weights=None is bit-for-bit identical to omitting the argument."""
+        np.random.seed(12)
+        T = 60
+        y = pd.DataFrame(np.random.randn(T, 3), columns=["y1", "y2", "y3"])
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+
+        baseline = rolling_residualize(
+            y=y, X=X, window=15, min_periods=15, expanding=False
+        )
+        explicit_none = rolling_residualize(
+            y=y, X=X, window=15, min_periods=15, expanding=False, weights=None
+        )
+        pd.testing.assert_frame_equal(baseline, explicit_none)
+
+    def test_uniform_weights_match_unweighted(self):
+        """Uniform weights (all 1/window) reproduce the equal-weight result."""
+        np.random.seed(13)
+        T = 70
+        y = pd.DataFrame(np.random.randn(T, 2), columns=["y1", "y2"])
+        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
+        window = 20
+        uniform = np.full(window, 1.0 / window)
+
+        unweighted = rolling_residualize(
+            y=y, X=X, window=window, min_periods=window, expanding=False
+        )
+        weighted_uniform = rolling_residualize(
+            y=y, X=X, window=window, min_periods=window, expanding=False, weights=uniform
+        )
+        np.testing.assert_allclose(
+            unweighted.to_numpy(), weighted_uniform.to_numpy(), equal_nan=True, atol=1e-10
+        )
+
+    def test_weights_renormalized_after_nan_masking(self):
+        """NaN-robust path (NaN in X): surviving weights renormalize to sum 1.
+
+        With a single full window we can reproduce the residual by hand: drop
+        the NaN row, renormalize the remaining weights to sum to 1, and solve
+        the weighted least squares problem.
+        """
+        np.random.seed(14)
+        window = 12
+        T = window  # single window -> only the last timestep is defined
+        y_np = np.random.randn(T)
+        X_np = np.random.randn(T, 2)
+        X_np[3, 0] = np.nan  # NaN in X invalidates row 3 -> per-column fallback
+
+        y = pd.DataFrame(y_np, columns=["y"])
+        X = pd.DataFrame(X_np, columns=["x1", "x2"])
+        w = _ewma_weights(halflife=4, window=window)
+
+        # min_periods <= surviving rows (11) so the window still produces a result.
+        result = rolling_residualize(
+            y=y, X=X, window=window, min_periods=window - 1, expanding=False, weights=w
+        )
+
+        # Manual weighted least squares on the surviving rows.
+        row_ok = ~np.isnan(X_np).any(axis=1)
+        w_c = w[row_ok]
+        w_c = w_c / w_c.sum()
+        assert w_c.sum() == pytest.approx(1.0)  # renormalized
+
+        Xc = X_np[row_ok]
+        yc = y_np[row_ok]
+        XtX = Xc.T @ (Xc * w_c[:, None])
+        beta = np.linalg.solve(XtX, Xc.T @ (yc * w_c))
+        expected = y_np[-1] - X_np[-1] @ beta
+
+        assert result.iloc[-1, 0] == pytest.approx(expected, rel=1e-10)
+
+    def test_weighted_nan_in_y_matches_manual(self):
+        """Intermediate path (NaN only in y): weighted residual matches manual WLS."""
+        np.random.seed(15)
+        window = 12
+        T = window
+        y_np = np.random.randn(T)
+        X_np = np.random.randn(T, 2)
+        y_np[5] = np.nan  # NaN in y -> intermediate vectorized path
+
+        y = pd.DataFrame(y_np, columns=["y"])
+        X = pd.DataFrame(X_np, columns=["x1", "x2"])
+        w = _ewma_weights(halflife=4, window=window)
+
+        result = rolling_residualize(
+            y=y, X=X, window=window, min_periods=window - 1, expanding=False, weights=w
+        )
+
+        row_ok = ~np.isnan(y_np)
+        w_c = w[row_ok]
+        w_c = w_c / w_c.sum()
+        Xc = X_np[row_ok]
+        yc = y_np[row_ok]
+        XtX = Xc.T @ (Xc * w_c[:, None])
+        beta = np.linalg.solve(XtX, Xc.T @ (yc * w_c))
+        expected = y_np[-1] - X_np[-1] @ beta
+
+        assert result.iloc[-1, 0] == pytest.approx(expected, rel=1e-10)
+
+    def test_weights_with_expanding_raises(self):
+        """weights are not supported with expanding windows."""
+        np.random.seed(16)
+        T = 40
+        y = pd.DataFrame(np.random.randn(T, 1), columns=["y"])
+        X = pd.DataFrame(np.random.randn(T, 1), columns=["x"])
+        w = _ewma_weights(halflife=5, window=20)
+        with pytest.raises(ValueError, match="expanding"):
+            rolling_residualize(
+                y=y, X=X, window=20, min_periods=20, expanding=True, weights=w
+            )
 
 
 class TestRollingGramSchmidt:
