@@ -48,7 +48,6 @@ class RollingOLSResult:
     _betas: dict[str, pd.DataFrame] = field(default_factory=dict)
     _intercepts: dict[str, pd.DataFrame] = field(default_factory=dict)
     _signals: dict[str, pd.DataFrame] = field(default_factory=dict)
-    _raw_exposure_signals: dict[str, pd.DataFrame] = field(default_factory=dict)
     _r2: dict[str, pd.DataFrame] = field(default_factory=dict)
     _partial_r2: dict[str, pd.DataFrame] = field(default_factory=dict)
     _residuals: dict[str, pd.DataFrame] = field(default_factory=dict)
@@ -91,23 +90,12 @@ class RollingOLSResult:
     def get_signal(self, factor: str) -> pd.DataFrame:
         """Factor term in the fitted model. Shape: (T, N_assets).
 
-        This is beta multiplied by the factor representation used by the
-        solver, and is the quantity used in standard return attribution. With
-        ``lag_signal=True``, it uses beta at ``t-1`` and the used factor value
-        at ``t``.
+        This is beta multiplied by the factor in the fitted joint model and is
+        the quantity used in standard return attribution. With
+        ``lag_signal=True``, it uses beta at ``t-1`` and factor value at ``t``.
         """
         self._check_factor(factor)
         return self._signals[factor]
-
-    def get_raw_exposure_signal(self, factor: str) -> pd.DataFrame:
-        """Beta applied to the untransformed factor. Shape: (T, N_assets).
-
-        When factor orthogonalization is active, this is not a term in any
-        fitted model. With ``lag_signal=True``, it uses beta at ``t-1`` and the
-        raw factor value at ``t``.
-        """
-        self._check_factor(factor)
-        return self._raw_exposure_signals[factor]
 
     def get_r2(self, factor: str) -> pd.DataFrame:
         """Full-model rolling R², or adjusted R². Shape: (T, N_assets).

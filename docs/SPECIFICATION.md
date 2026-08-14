@@ -279,36 +279,15 @@ the Ridge penalty.
 > sums, so the same `lambda_` has a different effective strength. Adjusted
 > R-squared also uses integer row counts rather than effective sample size.
 
-## 8. Window-wise orthogonalization
+## 8. Out-of-scope factor preprocessing
 
-Orthogonalization is sequential and local to the current window. Within a
-factor or control group, column `j` is projected on the already
-orthogonalized columns `1,...,j-1` using the basis estimated for endpoint `t`.
-When `fit_intercept=True`, the intercept belongs to the orthogonalization basis.
-
-For orthogonalized columns `q_{j,t}` on the current estimation rows,
-
-$$
-q_{k,t}^\top W_t q_{j,t} = 0,
-\qquad k < j.
-$$
-
-For equal weighting, this reduces to the ordinary inner product. Column order
-sets priority. Insufficient data or a singular basis produces NaN; rOLS never
-substitutes raw values for failed orthogonalized values.
-
-When Ridge and orthogonalization are combined, standardization occurs after
-orthogonalization. Returned coefficients are rescaled to the original units of
-the orthogonalized regressors.
-
-The basis changes with `t`. A change in an orthogonalized beta can therefore
-reflect a change in factor correlation, a change in target sensitivity, or
-both. rOLS does not currently provide a static full-sample basis.
-
-> **v0.2.1 deviates:** it retains one endpoint residual from each historical
-> projection and uses the resulting mixed-basis series in later windows. It
-> also fills failed orthogonalized values with raw observations, so the output
-> is partly transformed and partly raw.
+Sequential Gram-Schmidt transformation is preprocessing, not estimation, and
+is not part of rOLS. Under a rolling basis it changes the statistical object at
+every endpoint, so a coefficient change can reflect changing factor
+correlations rather than changing target sensitivity. It also changes factor
+scales and therefore interacts with a fixed Ridge penalty. Users who require
+this transformation must apply it before calling `fit()`. The joint model is
+the standard way to estimate mutually controlled factor effects.
 
 ## 9. R-squared and degrees of freedom
 
@@ -392,8 +371,8 @@ effective-degrees-of-freedom adjustment based on the smoothing matrix.
 
 HAC inference uses the same current-window fit, complete-case sample, design,
 weights, and coefficient convention as the reported estimate. Let `z_s` be the
-exact solve-coordinate design row, including the intercept when enabled and any
-orthogonalization or standardization. Let
+exact solve-coordinate design row, including the intercept when enabled and
+internal standardization. Let
 
 $$
 \widehat u_{i,s,t}
@@ -463,47 +442,27 @@ standard error and an infinite t-statistic.
 
 ## 11. Signals
 
-Let `f_used` denote the factor column that appears in the authoritative joint
-design, expressed in returned coefficient units. Controls alone do not transform
-this factor. Without factor orthogonalization,
-
-$$
-f^{\mathrm{used}}_{j,s}=f^{\mathrm{raw}}_{j,s}.
-$$
-
-With factor orthogonalization, `f_used` is the current-window orthogonalized
-factor. Internal Ridge standardization does not change the returned signal
-because coefficients are rescaled before use.
-
-The default signal accessor returns the fitted factor term:
+The factor enters the authoritative joint design as its supplied column.
+Controls do not transform it, and internal Ridge standardization does not
+change the returned signal because coefficients are rescaled before use.
+`get_signal(factor)` returns the fitted factor term:
 
 $$
 \operatorname{signal}_{i,j,t}
-= \widehat\beta_{i,j,t}f^{\mathrm{used}}_{j,t}.
+= \widehat\beta_{i,j,t}f_{j,t}.
 $$
 
 With `lag_signal=True`, it returns
 
 $$
 \operatorname{signal}_{i,j,t}
-= \widehat\beta_{i,j,t-1}f^{\mathrm{used}}_{j,t}.
-$$
-
-`get_raw_exposure_signal(factor)` returns the same coefficient multiplied by
-the untransformed factor. The two accessors coincide when factor
-orthogonalization is disabled, including when controls are present. When
-orthogonalization is enabled, their difference is
-
-$$
-\widehat\beta_{i,j,t}
-\left(f^{\mathrm{raw}}_{j,t}-f^{\mathrm{used}}_{j,t}\right).
+= \widehat\beta_{i,j,t-1}f_{j,t}.
 $$
 
 > **v0.2.1 deviates:** its beta is computed from a control-residualized and
-> possibly orthogonalized factor series, while its signal always multiplies the
-> raw factor. Under the version 0.3.0 direct joint solve, controls no longer
-> create a separate factor representation; only explicit factor
-> orthogonalization does.
+> transformed factor series, while its signal always multiplies the raw factor.
+> Under the version 0.3.0 direct joint solve, controls no longer create a
+> separate factor representation.
 
 ## 12. Index and alignment contract
 

@@ -17,13 +17,6 @@ Ridge regularization uses a normalized weighted loss and standardizes penalized
 regressors within each complete-case window. Factors are always penalized when
 lambda_ > 0; controls are penalized by default. The intercept is never penalized.
 
-Rolling Gram-Schmidt orthogonalization can be applied independently to factors
-and/or controls. Column order determines priority: first column is untouched,
-subsequent columns are orthogonalized against all preceding ones. Use this
-when regressors have a natural importance ordering (e.g. evergreen narratives
-before transient ones) and you want each beta to represent incremental
-explanatory power beyond higher-priority regressors.
-
 HAC standard errors (Newey-West) are computed on demand via result.get_se(factor).
 Set hac_lags on the constructor to enable this.
 """
@@ -37,7 +30,6 @@ from .estimators import (
     JointFitResult,
     _warn_ill_conditioned,
     _warn_singular,
-    rolling_gram_schmidt,
     rolling_joint_solve,
 )
 from .results import RollingOLSResult
@@ -211,15 +203,6 @@ class RollingOLS:
     >>> result.get_se("f1")        # Newey-West SE
     >>> result.get_tstat("f1")
 
-    With orthogonalization (factors ordered by importance):
-
-    >>> ols.fit(
-    ...     df[["evergreen_1", "evergreen_2", "transient_1"]],
-    ...     controls=df[["Mkt-RF"]],
-    ...     orthogonalize_factors=True,
-    ...     orthogonalize_controls=False,
-    ... )
-
     Long format output:
 
     >>> result.to_long("f1")       # date, asset, beta, signal, r2
@@ -276,8 +259,7 @@ class RollingOLS:
         self._factor_cols: list[str] = []
         self._control_cols: list[str] = []
         self._index: pd.Index | None = None
-        self._factors_raw: pd.DataFrame | None = None  # original, for signal
-        self._factors_fitted: pd.DataFrame | None = None
+        self._factors: pd.DataFrame | None = None
         self._controls_fitted: pd.DataFrame | None = None
 
     def _weights(self) -> np.ndarray | None:
@@ -351,16 +333,9 @@ class RollingOLS:
         self,
         factors: pd.DataFrame,
         controls: pd.DataFrame | None = None,
-        orthogonalize_factors: bool = False,
-        orthogonalize_controls: bool = False,
     ) -> RollingOLS:
         """
         Validate and store the regressors used by each window fit.
-
-        Optionally orthogonalizes factors and/or controls via rolling
-        Gram-Schmidt before residualization. Column order determines
-        orthogonalization priority — first column is untouched, each
-        subsequent column is orthogonalized against all preceding ones.
 
         Parameters
         ----------
@@ -370,15 +345,6 @@ class RollingOLS:
         controls : pd.DataFrame, optional
             Always-in regressors to partial out (e.g. df[["Mkt-RF", "SMB"]]).
             If None, no partialling out — pure factor regression.
-        orthogonalize_factors : bool
-            Apply rolling Gram-Schmidt within the factors group.
-            First factor is untouched; each subsequent factor is orthogonalized
-            against all previous ones. Use when factors have an importance
-            ordering and you want each beta to reflect incremental contribution.
-        orthogonalize_controls : bool
-            Apply rolling Gram-Schmidt within the controls group.
-            Useful when controls are correlated (e.g. multiple style factors).
-
         Returns
         -------
         self
@@ -389,32 +355,11 @@ class RollingOLS:
 
         factors = factors.astype(self.dtype)
         self._index = factors.index.copy()
-        self._factors_raw = factors  # kept for signal computation
-
-        if orthogonalize_factors and factors.shape[1] > 1:
-            factors = rolling_gram_schmidt(
-                factors,
-                window=self.window,
-                min_periods=self.min_periods,
-                expanding=self.expanding,
-                warn_singular=self.warn_singular,
-            ).astype(self.dtype)
-
         self._factor_cols = factors.columns.tolist()
-        self._factors_fitted = factors
+        self._factors = factors
 
         if controls is not None:
             controls = controls.astype(self.dtype)
-
-            if orthogonalize_controls and controls.shape[1] > 1:
-                controls = rolling_gram_schmidt(
-                    controls,
-                    window=self.window,
-                    min_periods=self.min_periods,
-                    expanding=self.expanding,
-                    warn_singular=self.warn_singular,
-                ).astype(self.dtype)
-
             self._control_cols = controls.columns.tolist()
             self._controls_fitted = controls
         else:
@@ -461,7 +406,7 @@ class RollingOLS:
         asset_cols = assets.columns.tolist()
         assets = assets.astype(self.dtype)
 
-        if self._factors_fitted is None or self._factors_raw is None:
+        if self._factors is None:
             raise RuntimeError("Fitted factors are unavailable. Call fit() again.")
 
         # Preserve the controls-only residual accessor using a separate direct
@@ -499,7 +444,7 @@ class RollingOLS:
             design_parts = []
             if self._controls_fitted is not None:
                 design_parts.append(self._controls_fitted)
-            design_parts.append(self._factors_fitted[[fac]])
+            design_parts.append(self._factors[[fac]])
             design = pd.concat(design_parts, axis=1)
             fit = self._solve_targets(
                 assets,
@@ -525,7 +470,7 @@ class RollingOLS:
                 reduced_ssr = fit.sst
             else:
                 factor_is_finite = pd.Series(
-                    np.isfinite(self._factors_fitted[fac].to_numpy()),
+                    np.isfinite(self._factors[fac].to_numpy()),
                     index=assets.index,
                 )
                 reduced_targets = assets.where(factor_is_finite, axis=0)
@@ -559,29 +504,20 @@ class RollingOLS:
                 columns=assets.columns,
             )
 
-            factor_used = self._factors_fitted[fac]
-            factor_raw = self._factors_raw[fac]
+            factor = self._factors[fac]
             signal = (
-                beta.shift(1).mul(factor_used, axis=0)
-                if self.lag_signal
-                else beta.mul(factor_used, axis=0)
-            )
-            raw_exposure_signal = (
-                beta.shift(1).mul(factor_raw, axis=0)
-                if self.lag_signal
-                else beta.mul(factor_raw, axis=0)
+                beta.shift(1).mul(factor, axis=0) if self.lag_signal else beta.mul(factor, axis=0)
             )
 
             result._betas[fac] = beta
             result._intercepts[fac] = intercept
             result._signals[fac] = signal
-            result._raw_exposure_signals[fac] = raw_exposure_signal
             result._r2[fac] = r2
             result._partial_r2[fac] = partial_r2
             result._residuals[fac] = residuals
             result._dof[fac] = dof
             result._n_used[fac] = n_used
-            result._factor_values[fac] = factor_used
+            result._factor_values[fac] = factor
             if return_control_betas and self._controls_fitted is not None:
                 direct_control_betas[fac] = {
                     control: pd.DataFrame(
@@ -606,8 +542,6 @@ class RollingOLS:
         factors: pd.DataFrame,
         assets: pd.DataFrame,
         controls: pd.DataFrame | None = None,
-        orthogonalize_factors: bool = False,
-        orthogonalize_controls: bool = False,
         return_control_betas: bool = False,
     ) -> RollingOLSResult:
         """
@@ -615,6 +549,6 @@ class RollingOLS:
 
         Parameters mirror fit() and transform() — see their docstrings.
         """
-        return self.fit(factors, controls, orthogonalize_factors, orthogonalize_controls).transform(
+        return self.fit(factors, controls).transform(
             assets, return_control_betas=return_control_betas
         )

@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Python loop is now O(n_lags) instead of O(T). Expanding-window path still
   loops. Results identical to the previous implementation. (#4)
 
+### Removed
+- Rolling Gram-Schmidt orthogonalization: `orthogonalize_factors` and
+  `orthogonalize_controls` on `fit()`/`fit_transform()`, and
+  `get_raw_exposure_signal()`. Orthogonalization is preprocessing, produces a
+  time-varying basis under a rolling window, and is subsumed by `mode="joint"`.
+  Apply it to the factors before calling `fit()` if needed. (F11, F12)
+
 ### Fixed
 - `_solve_batch` no longer lets `inf` from near-singular solves propagate into
   betas, signals, and R². Results are written in place and sanitized to NaN. (#6)

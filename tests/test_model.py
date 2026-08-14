@@ -98,28 +98,28 @@ class TestRollingOLSFit:
 
         assert result is ols
 
-    def test_fit_orthogonalize_factors(self):
-        """Test fit with factor orthogonalization."""
-        np.random.seed(42)
-        T = 100
-        factors = pd.DataFrame(np.random.randn(T, 3), columns=["f1", "f2", "f3"])
+    @pytest.mark.parametrize(
+        "removed_argument", ["orthogonalize_factors", "orthogonalize_controls"]
+    )
+    def test_fit_rejects_removed_arguments(self, removed_argument):
+        factors = pd.DataFrame({"factor": np.arange(10.0)})
 
-        ols = RollingOLS(window=20)
-        ols.fit(factors, orthogonalize_factors=True)
+        with pytest.raises(TypeError, match=removed_argument):
+            RollingOLS(window=5).fit(factors, **{removed_argument: True})
 
-        assert ols._is_fitted
+    @pytest.mark.parametrize(
+        "removed_argument", ["orthogonalize_factors", "orthogonalize_controls"]
+    )
+    def test_fit_transform_rejects_removed_arguments(self, removed_argument):
+        factors = pd.DataFrame({"factor": np.arange(10.0)})
+        assets = pd.DataFrame({"asset": np.arange(10.0)})
 
-    def test_fit_orthogonalize_controls(self):
-        """Test fit with control orthogonalization."""
-        np.random.seed(42)
-        T = 100
-        factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
-        controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
-
-        ols = RollingOLS(window=20)
-        ols.fit(factors, controls=controls, orthogonalize_controls=True)
-
-        assert ols._is_fitted
+        with pytest.raises(TypeError, match=removed_argument):
+            RollingOLS(window=5).fit_transform(
+                factors,
+                assets,
+                **{removed_argument: True},
+            )
 
     def test_fit_with_ridge(self):
         """Test fit with ridge regularization."""
@@ -872,10 +872,10 @@ class TestRollingOLSModes:
 
 
 class TestRollingOLSSignalRepresentation:
-    """Signals distinguish the solver regressor from the raw exposure."""
+    """Signals are the fitted joint model's factor term."""
 
     @pytest.mark.parametrize("with_controls", [False, True])
-    def test_signals_are_identical_without_factor_orthogonalization(self, with_controls):
+    def test_signal_equals_beta_times_factor(self, with_controls):
         rng = np.random.default_rng(48)
         factors = pd.DataFrame(rng.normal(size=(50, 2)), columns=["f1", "f2"])
         controls = pd.DataFrame({"control": rng.normal(size=50)}) if with_controls else None
@@ -888,38 +888,9 @@ class TestRollingOLSSignalRepresentation:
         for factor in factors.columns:
             pd.testing.assert_frame_equal(
                 result.get_signal(factor),
-                result.get_raw_exposure_signal(factor),
+                result.get_beta(factor).mul(factors[factor], axis=0),
                 check_exact=True,
             )
-
-    def test_orthogonalization_difference_identity(self):
-        rng = np.random.default_rng(49)
-        first = rng.normal(size=60)
-        factors = pd.DataFrame(
-            {
-                "f1": first,
-                "f2": 0.8 * first + rng.normal(scale=0.2, size=60),
-            }
-        )
-        assets = pd.DataFrame({"asset": rng.normal(size=60)})
-        model = RollingOLS(window=20, dtype="float64")
-        result = model.fit_transform(factors, assets, orthogonalize_factors=True)
-        factor = "f2"
-
-        difference = result.get_raw_exposure_signal(factor) - result.get_signal(factor)
-        expected = result.get_beta(factor).mul(
-            factors[factor] - model._factors_fitted[factor],
-            axis=0,
-        )
-
-        assert not result.get_signal(factor).equals(result.get_raw_exposure_signal(factor))
-        np.testing.assert_allclose(
-            difference,
-            expected,
-            rtol=0,
-            atol=1e-12,
-            equal_nan=True,
-        )
 
     def test_fitted_contribution_reconstructs_endpoint_target(self):
         rng = np.random.default_rng(50)
@@ -953,15 +924,11 @@ class TestRollingOLSSignalRepresentation:
         )
         assets = pd.DataFrame({"asset": rng.normal(size=45)})
         model = RollingOLS(window=15, lag_signal=True, dtype="float64")
-        result = model.fit_transform(factors, assets, orthogonalize_factors=True)
+        result = model.fit_transform(factors, assets)
         endpoint = 30
         previous_beta = result.get_beta("f2").iloc[endpoint - 1, 0]
 
         assert result.get_signal("f2").iloc[endpoint, 0] == pytest.approx(
-            previous_beta * model._factors_fitted["f2"].iloc[endpoint],
-            abs=1e-12,
-        )
-        assert result.get_raw_exposure_signal("f2").iloc[endpoint, 0] == pytest.approx(
             previous_beta * factors["f2"].iloc[endpoint],
             abs=1e-12,
         )

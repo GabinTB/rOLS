@@ -8,7 +8,6 @@ or pandas DataFrames and are independent of the model class.
 Functions
 ---------
 rolling_residualize   : rolling OLS/Ridge residualization (Frisch-Waugh step)
-rolling_gram_schmidt  : rolling Gram-Schmidt orthogonalization within a group
 hac_se                : Newey-West HAC standard errors from residuals
 """
 
@@ -853,65 +852,6 @@ def rolling_residualize(
         _warn_singular(n_singular)
 
     return pd.DataFrame(resid, index=y.index, columns=y.columns)
-
-
-# ---------------------------------------------------------------------------
-# Rolling Gram-Schmidt orthogonalization
-# ---------------------------------------------------------------------------
-
-
-def rolling_gram_schmidt(
-    X: pd.DataFrame,
-    window: int,
-    min_periods: int,
-    expanding: bool,
-    warn_singular: bool = True,
-) -> pd.DataFrame:
-    """
-    Rolling Gram-Schmidt orthogonalization within a group of regressors.
-
-    At each time t, fits a rolling window and orthogonalizes X[:, j] against
-    X[:, 0:j] using their rolling covariance structure. Column order determines
-    priority: the first column is untouched, subsequent columns are orthogonalized
-    against all previous ones.
-
-    This means each column's residual represents incremental variation
-    beyond the higher-priority columns — useful when columns have a natural
-    importance ordering (e.g. evergreen narratives first, transient ones last).
-
-    Parameters
-    ----------
-    X           : (T, k) DataFrame of regressors
-    window      : rolling window length
-    min_periods : minimum observations
-    expanding   : use expanding window
-
-    Returns
-    -------
-    pd.DataFrame, same shape/index/columns as X
-    """
-    cols = X.columns.tolist()
-    if len(cols) == 1:
-        return X.copy()
-
-    result = X.astype(np.float64).copy()
-
-    for j in range(1, len(cols)):
-        y_col = result[[cols[j]]]
-        Xprev = result[cols[:j]]
-
-        resid = rolling_residualize(
-            y=y_col,
-            X=Xprev,
-            window=window,
-            min_periods=min_periods,
-            expanding=expanding,
-            ridge_lambda=0.0,
-            warn_singular=warn_singular,
-        )
-        result[cols[j]] = resid[cols[j]].fillna(X[cols[j]])
-
-    return result
 
 
 # ---------------------------------------------------------------------------

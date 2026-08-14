@@ -12,11 +12,14 @@ from rols import RollingOLS
 from rols.estimators import (
     _solve_batch,
     hac_se,
-    rolling_gram_schmidt,
     rolling_joint_solve,
     rolling_residualize,
 )
 from rols.model import _ewma_weights
+
+
+def test_removed_gram_schmidt_estimator_is_absent():
+    assert not hasattr(est, "rolling_gram_schmidt")
 
 
 class TestRollingJointSolve:
@@ -670,67 +673,6 @@ class TestWeightedResidualize:
         w = _ewma_weights(halflife=5, window=20)
         with pytest.raises(ValueError, match="expanding"):
             rolling_residualize(y=y, X=X, window=20, min_periods=20, expanding=True, weights=w)
-
-
-class TestRollingGramSchmidt:
-    """Tests for rolling_gram_schmidt function."""
-
-    def test_basic_orthogonalization(self):
-        """Test basic Gram-Schmidt orthogonalization."""
-        np.random.seed(42)
-        T = 100
-        X = pd.DataFrame(np.random.randn(T, 3), columns=["x1", "x2", "x3"])
-
-        result = rolling_gram_schmidt(X=X, window=20, min_periods=20, expanding=False)
-
-        assert result.shape == X.shape
-        assert list(result.columns) == list(X.columns)
-
-    def test_single_column_unchanged(self):
-        """Test that single column remains unchanged."""
-        np.random.seed(42)
-        T = 100
-        X = pd.DataFrame(np.random.randn(T, 1), columns=["x1"])
-
-        result = rolling_gram_schmidt(X=X, window=20, min_periods=20, expanding=False)
-
-        # First column should remain unchanged
-        pd.testing.assert_frame_equal(result, X)
-
-    def test_expanding_orthogonalization(self):
-        """Test orthogonalization with expanding window."""
-        np.random.seed(42)
-        T = 50
-        X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
-
-        result = rolling_gram_schmidt(X=X, window=10, min_periods=5, expanding=True)
-
-        assert result.shape == X.shape
-
-    def test_multiple_columns(self):
-        """Test with multiple columns."""
-        np.random.seed(42)
-        T = 100
-        X = pd.DataFrame(np.random.randn(T, 5), columns=[f"x{i}" for i in range(5)])
-
-        result = rolling_gram_schmidt(X=X, window=20, min_periods=20, expanding=False)
-
-        assert result.shape == X.shape
-        assert list(result.columns) == list(X.columns)
-
-    def test_orthogonalization_reduces_correlation(self):
-        """Test that orthogonalization reduces correlation."""
-        np.random.seed(42)
-        T = 100
-        # Create highly correlated columns
-        x1 = pd.Series(np.random.randn(T))
-        x2 = x1 + 0.1 * np.random.randn(T)
-        X = pd.DataFrame({"x1": x1, "x2": x2})
-
-        result = rolling_gram_schmidt(X=X, window=20, min_periods=20, expanding=False)
-
-        # First column should be unchanged
-        pd.testing.assert_series_equal(result["x1"], X["x1"], check_dtype=False)
 
 
 class TestHACSE:

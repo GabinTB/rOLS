@@ -55,15 +55,8 @@ class TestRollingOLSResultGetters:
         assert isinstance(signal, pd.DataFrame)
         assert signal.shape == (100, 3)
 
-    def test_get_raw_exposure_signal(self, setup_result):
-        raw_signal = setup_result.get_raw_exposure_signal("f1")
-
-        assert isinstance(raw_signal, pd.DataFrame)
-        assert raw_signal.shape == (100, 3)
-
-    def test_get_raw_exposure_signal_invalid_factor_raises(self, setup_result):
-        with pytest.raises(KeyError):
-            setup_result.get_raw_exposure_signal("invalid_factor")
+    def test_removed_raw_exposure_signal_accessor_is_absent(self, setup_result):
+        assert not hasattr(setup_result, "get_raw_exposure_signal")
 
     def test_get_r2(self, setup_result):
         """Test get_r2 method."""

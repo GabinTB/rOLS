@@ -26,12 +26,10 @@ The test suite consists of 92 tests organized into 4 main modules:
 ### 1. **test_estimators.py** (19 tests)
 Tests for low-level rolling estimators in `rols/estimators.py`:
 - `rolling_residualize()`: OLS and Ridge regression residuals
-- `rolling_gram_schmidt()`: Gram-Schmidt orthogonalization
 - `hac_se()`: Newey-West HAC standard errors
 
 **Key test classes:**
 - `TestRollingResidualize`: 9 tests covering OLS/Ridge, expanding windows, NaN handling, min_periods
-- `TestRollingGramSchmidt`: 5 tests for orthogonalization
 - `TestHACSE`: 5 tests for HAC standard error computation
 
 ### 2. **test_model.py** (33 tests)
@@ -69,7 +67,6 @@ End-to-end integration tests covering complete workflows:
 - HAC standard errors integration
 - Expanding and rolling windows
 - Ridge regularization
-- Factor orthogonalization
 - Real-like data handling
 - Error handling and edge cases
 
@@ -82,7 +79,6 @@ End-to-end integration tests covering complete workflows:
 - Control variables (Frisch-Waugh-Lovell)
 
 ✅ **Advanced Features:**
-- Gram-Schmidt orthogonalization
 - Newey-West HAC standard errors
 - Lagged signals (avoiding look-ahead bias)
 - Adjusted R²

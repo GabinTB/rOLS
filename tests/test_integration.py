@@ -93,25 +93,6 @@ class TestIntegrationBasicWorkflow:
 
         assert result.get_beta("f1").shape == (T, 2)
 
-    def test_complete_workflow_with_orthogonalization(self):
-        """Test complete workflow with orthogonalization."""
-        np.random.seed(42)
-        T = 100
-        factors = pd.DataFrame(np.random.randn(T, 3), columns=["f1", "f2", "f3"])
-        controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
-        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
-
-        ols = RollingOLS(window=20)
-        result = ols.fit_transform(
-            factors,
-            assets,
-            controls=controls,
-            orthogonalize_factors=True,
-            orthogonalize_controls=True,
-        )
-
-        assert result.get_beta("f1").shape == (T, 2)
-
     def test_complete_workflow_lag_signal(self):
         """Test complete workflow with lagged signals."""
         np.random.seed(42)
@@ -259,25 +240,6 @@ class TestIntegrationOutputFormats:
 
 class TestIntegrationStatisticalProperties:
     """Integration tests for statistical properties."""
-
-    def test_orthogonalization_reduces_correlation(self):
-        """Test that orthogonalization reduces factor correlation."""
-        np.random.seed(42)
-        T = 100
-
-        # Create correlated factors
-        f1 = pd.Series(np.random.randn(T))
-        f2 = f1 + 0.1 * np.random.randn(T)
-        f3 = f1 + f2 + 0.1 * np.random.randn(T)
-
-        factors = pd.DataFrame({"f1": f1, "f2": f2, "f3": f3})
-        assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
-
-        # With orthogonalization
-        ols = RollingOLS(window=20)
-        result = ols.fit_transform(factors, assets, orthogonalize_factors=True)
-
-        assert result.get_beta("f1").shape == (T, 2)
 
     def test_expanding_window_accumulates_data(self):
         """Test that expanding window accumulates information."""

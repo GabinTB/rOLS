@@ -4,7 +4,7 @@ Vectorized rolling and expanding regression for multi-target, multi-factor time 
 
 Built for performance at scale: hundreds of regressors against hundreds of targets, over thousands of time steps, without loops.
 
-Adapted for applications where dynamic relationships matter most: estimating rolling betas in finance to isolate idiosyncratic sensitivity to narrative factors; tracking time-varying price elasticities in economics to capture structural shifts; attributing regional temperature anomalies in climate science by orthogonalizing forcing factors; and adaptively filtering signals in real time. Designed for speed and scalability, it enables precise, loop-free analysis across domains where traditional methods fall short.
+Adapted for applications where dynamic relationships matter most: estimating rolling betas in finance to isolate idiosyncratic sensitivity to narrative factors; tracking time-varying price elasticities in economics to capture structural shifts; attributing regional temperature anomalies in climate science to forcing factors; and adaptively filtering signals in real time. Designed for speed and scalability, it enables precise, loop-free analysis across domains where traditional methods fall short.
 
 | Metric | Value |
 |---|---|
@@ -23,7 +23,6 @@ rOLS estimates time-varying sensitivities (betas) between a set of factors and a
 It supports:
 - **OLS and Ridge** regression (controlled by a single `lambda_` parameter)
 - **Multiple controls** — partialled out via Frisch-Waugh-Lovell, keeping the per-factor math univariate regardless of how many controls you add
-- **Rolling Gram-Schmidt orthogonalization** — factors and/or controls can be orthogonalized within their group before estimation, so each beta reflects incremental explanatory power
 - **HAC standard errors** — Newey-West robust SEs, computed on demand
 - **Expanding windows** as an alternative to fixed rolling windows
 - **Lagged signals** to avoid look-ahead bias
@@ -68,7 +67,7 @@ df = pd.merge(df, control_df, left_index=True, right_index=True, how='left').ffi
 
 # Running the roling regression
 ols = RollingOLS(window=12, expanding=False, lambda_=0.0)
-ols.fit(factors=df[factors], controls=df[controls], orthogonalize_controls=True, orthogonalize_factors=True)
+ols.fit(factors=df[factors], controls=df[controls])
 result = ols.transform(assets=df[assets])
 
 # Plot some results
@@ -98,7 +97,7 @@ for f in factors:
 
 ---
 
-### `.fit(factors, controls=None, orthogonalize_factors=False, orthogonalize_controls=False)`
+### `.fit(factors, controls=None)`
 
 Fits the model on the regressors side. Residualizes factors against controls (Frisch-Waugh step 1) if controls are provided.
 
@@ -109,12 +108,7 @@ ols.fit(df[["f1", "f2", "f3"]])
 # With controls
 ols.fit(df[["f1", "f2"]], controls=df[["ctrl1", "ctrl2"]])
 
-# With rolling orthogonalization
-# f1 is untouched, f2 is orthogonalized against f1, f3 against f1 and f2
-ols.fit(df[["f1", "f2", "f3"]], orthogonalize_factors=True)
 ```
-
-**Column order matters for orthogonalization** — place higher-priority factors first. Each factor's beta will then reflect its incremental contribution beyond all preceding ones.
 
 ---
 
@@ -145,7 +139,6 @@ result = RollingOLS(window=60).fit_transform(
     df[["f1", "f2"]],
     df[["y1", "y2"]],
     controls=df[["ctrl1"]],
-    orthogonalize_factors=True,
 )
 ```
 
@@ -239,22 +232,6 @@ surviving weights renormalized to sum to 1, so missing data does not distort the
 scheme. `ewma_halflife` cannot be combined with `expanding=True` (an expanding
 window has no fixed length to precompute weights over), and HAC standard errors
 are still computed with equal weights.
-
-### Orthogonalization with importance ordering
-
-When factors have a natural priority order, orthogonalization ensures each beta measures incremental contribution beyond higher-priority factors.
-
-```python
-# f1 is the primary factor — left untouched
-# f2 is orthogonalized against f1
-# f3 is orthogonalized against f1 and f2
-ols = RollingOLS(window=120)
-ols.fit(
-    df[["f1", "f2", "f3"]],
-    orthogonalize_factors=True,
-)
-result = ols.transform(df[targets])
-```
 
 ### Expanding window
 
