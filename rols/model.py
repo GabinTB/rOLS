@@ -35,6 +35,8 @@ import pandas as pd
 
 from .estimators import (
     JointFitResult,
+    _warn_ill_conditioned,
+    _warn_singular,
     rolling_gram_schmidt,
     rolling_joint_solve,
 )
@@ -185,6 +187,11 @@ class RollingOLS:
         windows are singular (collinear regressors or degenerate windows),
         with the affected estimates set to NaN. Set False to suppress these
         warnings when singular windows are expected (e.g. short warm-ups).
+        This also controls ill-conditioning warnings.
+    cond_warn_threshold : float
+        Warn when the condition number of a window's weighted design Gram matrix
+        exceeds this value. The default is 1e10. This threshold applies to
+        ``cond(X'X)``, which is approximately ``cond(X) ** 2``.
 
     Examples
     --------
@@ -236,6 +243,7 @@ class RollingOLS:
         asset_chunk_size: int = 100,
         warn_singular: bool = True,
         ewma_halflife: int | None = None,
+        cond_warn_threshold: float = 1e10,
     ) -> None:
         if ewma_halflife is not None and expanding:
             raise ValueError(
@@ -245,6 +253,8 @@ class RollingOLS:
             )
         if lambda_ < 0:
             raise ValueError("lambda_ must be non-negative")
+        if not np.isfinite(cond_warn_threshold) or cond_warn_threshold <= 0:
+            raise ValueError("cond_warn_threshold must be finite and positive")
 
         self.window = window
         self.min_periods = min_periods if min_periods is not None else window
@@ -260,6 +270,7 @@ class RollingOLS:
         self.dtype = dtype
         self.asset_chunk_size = asset_chunk_size
         self.warn_singular = warn_singular
+        self.cond_warn_threshold = cond_warn_threshold
 
         self._is_fitted = False
         self._factor_cols: list[str] = []
@@ -311,11 +322,12 @@ class RollingOLS:
                 fit_intercept=self.fit_intercept,
                 penalty=penalty,
                 weights=self._weights(),
-                warn_singular=self.warn_singular,
+                warn_singular=False,
+                cond_warn_threshold=self.cond_warn_threshold,
             )
             for chunk in chunks
         ]
-        return JointFitResult(
+        combined = JointFitResult(
             coef=np.concatenate([fit.coef for fit in fits], axis=2),
             intercept=np.concatenate([fit.intercept for fit in fits], axis=1),
             resid_endpoint=np.concatenate([fit.resid_endpoint for fit in fits], axis=1),
@@ -323,7 +335,13 @@ class RollingOLS:
             sst=np.concatenate([fit.sst for fit in fits], axis=1),
             n_used=np.concatenate([fit.n_used for fit in fits], axis=1),
             n_eff=np.concatenate([fit.n_eff for fit in fits], axis=1),
+            n_singular=sum(fit.n_singular for fit in fits),
+            n_ill_conditioned=sum(fit.n_ill_conditioned for fit in fits),
         )
+        if self.warn_singular:
+            _warn_singular(combined.n_singular)
+            _warn_ill_conditioned(combined.n_ill_conditioned, self.cond_warn_threshold)
+        return combined
 
     # ------------------------------------------------------------------
     # fit

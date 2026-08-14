@@ -33,6 +33,8 @@ class JointFitResult:
     sst: np.ndarray
     n_used: np.ndarray
     n_eff: np.ndarray
+    n_singular: int = 0
+    n_ill_conditioned: int = 0
 
 
 def _warn_singular(n: int) -> None:
@@ -43,6 +45,20 @@ def _warn_singular(n: int) -> None:
         f"{n} singular window(s) — affected estimates set to NaN. "
         "This usually means collinear regressors or a degenerate window; "
         "consider adding Ridge regularization (lambda_ > 0).",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _warn_ill_conditioned(n: int, threshold: float) -> None:
+    """Emit one warning for all full-rank windows above the condition threshold."""
+    if n <= 0:
+        return
+    warnings.warn(
+        f"{n} window(s) have an ill-conditioned design "
+        f"(cond(X'X) > {threshold:.0e}). Estimates in those windows may be "
+        "numerically unreliable. Consider Ridge (lambda_ > 0) or removing "
+        "collinear regressors.",
         RuntimeWarning,
         stacklevel=3,
     )
@@ -101,11 +117,12 @@ def _solve_joint_window(
     fit_intercept: bool,
     weights: np.ndarray | None,
     penalty: np.ndarray,
-) -> tuple[np.ndarray, float, float, float, int, float] | None:
+    cond_warn_threshold: float,
+) -> tuple[tuple[np.ndarray, float, float, float, int, float] | None, bool]:
     """Solve one complete-case window for one target."""
     n_used = int(complete_case.sum())
     if n_used == 0:
-        return None
+        return None, False
 
     complete_target = target[complete_case]
     complete_design = design[complete_case]
@@ -115,7 +132,7 @@ def _solve_joint_window(
         complete_weights = weights[complete_case]
         weight_sum = complete_weights.sum()
         if weight_sum <= 0:
-            return None
+            return None, False
         complete_weights = complete_weights / weight_sum
 
     penalty_diagonal = np.diag(penalty)
@@ -133,17 +150,30 @@ def _solve_joint_window(
             scale_squared = np.sum(complete_weights * values**2)
         scales[column] = np.sqrt(scale_squared)
         if not np.isfinite(scales[column]) or scales[column] <= np.finfo(float).eps:
-            return None
+            return None, False
         solve_design[:, column] /= scales[column]
 
-    gram = solve_design.T @ (complete_weights[:, None] * solve_design) + penalty
-    rhs = solve_design.T @ (complete_weights * complete_target)
+    sqrt_weights = np.sqrt(complete_weights)
+    weighted_design = solve_design * sqrt_weights[:, None]
+    weighted_target = complete_target * sqrt_weights
+    design_gram = weighted_design.T @ weighted_design
+    condition_number = float(np.linalg.cond(design_gram))
+    if np.any(penalty):
+        augmented_design = np.vstack([weighted_design, np.diag(np.sqrt(np.diag(penalty)))])
+        augmented_target = np.concatenate([weighted_target, np.zeros(solve_design.shape[1])])
+    else:
+        augmented_design = weighted_design
+        augmented_target = weighted_target
+
+    if np.linalg.matrix_rank(augmented_design) < solve_design.shape[1]:
+        return None, False
     try:
-        solve_parameters = np.linalg.solve(gram, rhs)
+        q, r = np.linalg.qr(augmented_design, mode="reduced")
+        solve_parameters = np.linalg.solve(r, q.T @ augmented_target)
     except np.linalg.LinAlgError:
-        return None
+        return None, False
     if not np.isfinite(solve_parameters).all():
-        return None
+        return None, False
 
     parameters = solve_parameters / scales
     if fit_intercept:
@@ -160,7 +190,8 @@ def _solve_joint_window(
     if complete_case[-1]:
         endpoint_residual = float(target[-1] - design[-1] @ parameters)
     n_eff = float(1.0 / np.sum(complete_weights**2))
-    return parameters, endpoint_residual, ssr, sst, n_used, n_eff
+    result = parameters, endpoint_residual, ssr, sst, n_used, n_eff
+    return result, condition_number > cond_warn_threshold
 
 
 def rolling_joint_solve(
@@ -173,6 +204,7 @@ def rolling_joint_solve(
     penalty: np.ndarray | None = None,
     weights: np.ndarray | None = None,
     warn_singular: bool = True,
+    cond_warn_threshold: float = 1e10,
 ) -> JointFitResult:
     """Fit one current-window joint model per endpoint and target.
 
@@ -180,7 +212,9 @@ def rolling_joint_solve(
     design column. Every coefficient, endpoint residual, sum of squares, and
     sample count comes from the same complete-case fit. Equal and supplied
     observation weights are normalized to sum to one within each target's
-    complete-case sample.
+    complete-case sample. Solves use QR on the weighted design, augmented by
+    the square root of the penalty for Ridge. Conditioning diagnostics use
+    ``cond(X'X)`` for the weighted design before augmentation.
     """
     assert y.index.equals(X.index), "y and X must have identical indexes"
     if window <= 0 or min_periods <= 0:
@@ -189,6 +223,8 @@ def rolling_joint_solve(
         raise ValueError("min_periods cannot exceed window")
     if weights is not None and expanding:
         raise ValueError("weights are not supported with expanding=True")
+    if not np.isfinite(cond_warn_threshold) or cond_warn_threshold <= 0:
+        raise ValueError("cond_warn_threshold must be finite and positive")
 
     target_values = y.to_numpy(dtype=np.float64)
     regressor_values = X.to_numpy(dtype=np.float64)
@@ -256,6 +292,7 @@ def rolling_joint_solve(
 
     vectorizable_rolling = not expanding and np.isfinite(design).all() and n_observations >= window
     n_singular = 0
+    n_ill_conditioned = 0
     if vectorizable_rolling:
         clean_target_positions = np.flatnonzero(np.isfinite(target_values).all(axis=0))
         dirty_target_positions = np.flatnonzero(~np.isfinite(target_values).all(axis=0))
@@ -288,11 +325,49 @@ def rolling_joint_solve(
         ).all(axis=1)
         safe_scales = np.where(valid_scales[:, None], scales, 1.0)
         solve_design_windows /= safe_scales[:, None, :]
-        weighted_design_windows = solve_design_windows * window_weights[None, :, None]
-        gram = np.einsum("twi,twj->tij", weighted_design_windows, solve_design_windows)
-        gram += penalty_matrix
-        rhs = np.einsum("twi,twn->tin", weighted_design_windows, target_windows)
-        solve_parameters = _solve_batch(gram, rhs, warn_singular=warn_singular)
+        sqrt_window_weights = np.sqrt(window_weights)
+        weighted_design_windows = solve_design_windows * sqrt_window_weights[None, :, None]
+        weighted_target_windows = target_windows * sqrt_window_weights[None, :, None]
+        if np.any(penalty_matrix):
+            square_root_penalty = np.diag(np.sqrt(np.diag(penalty_matrix)))
+            augmented_design = np.concatenate(
+                [
+                    weighted_design_windows,
+                    np.broadcast_to(
+                        square_root_penalty,
+                        (weighted_design_windows.shape[0], n_parameters, n_parameters),
+                    ),
+                ],
+                axis=1,
+            )
+            augmented_targets = np.concatenate(
+                [
+                    weighted_target_windows,
+                    np.zeros((target_windows.shape[0], n_parameters, target_windows.shape[2])),
+                ],
+                axis=1,
+            )
+        else:
+            augmented_design = weighted_design_windows
+            augmented_targets = weighted_target_windows
+
+        design_gram = np.einsum("twi,twj->tij", weighted_design_windows, weighted_design_windows)
+        condition_numbers = np.linalg.cond(design_gram)
+        ranks = np.linalg.matrix_rank(augmented_design)
+        full_rank = ranks == n_parameters
+        valid_windows = valid_scales & full_rank
+        if clean_target_positions.size:
+            n_singular += int((~valid_windows).sum())
+            n_ill_conditioned += int(
+                (valid_windows & (condition_numbers > cond_warn_threshold)).sum()
+            )
+
+        q, r = np.linalg.qr(augmented_design, mode="reduced")
+        projected_targets = np.einsum("twk,twn->tkn", q, augmented_targets)
+        safe_r = r.copy()
+        safe_r[~valid_windows] = np.eye(n_parameters)
+        solve_parameters = np.linalg.solve(safe_r, projected_targets)
+        solve_parameters[~valid_windows] = np.nan
         parameters = solve_parameters / safe_scales[:, :, None]
         if fit_intercept:
             parameters[:, 0, :] -= np.einsum("tk,tkn->tn", means[:, 1:], parameters[:, 1:, :])
@@ -329,14 +404,16 @@ def rolling_joint_solve(
                 complete_case = np.isfinite(target_values[: endpoint + 1, target_position])
                 if int(complete_case.sum()) < min_periods:
                     continue
-                solved = _solve_joint_window(
+                solved, ill_conditioned = _solve_joint_window(
                     target_values[: endpoint + 1, target_position],
                     design[: endpoint + 1],
                     complete_case,
                     fit_intercept,
                     endpoint_weights,
                     penalty_matrix,
+                    cond_warn_threshold,
                 )
+                n_ill_conditioned += int(ill_conditioned)
                 if solved is None:
                     n_singular += 1
                 else:
@@ -350,14 +427,16 @@ def rolling_joint_solve(
                 complete_case = np.isfinite(window_target)
                 if int(complete_case.sum()) < min_periods:
                     continue
-                solved = _solve_joint_window(
+                solved, ill_conditioned = _solve_joint_window(
                     window_target,
                     window_design,
                     complete_case,
                     fit_intercept,
                     endpoint_weights,
                     penalty_matrix,
+                    cond_warn_threshold,
                 )
+                n_ill_conditioned += int(ill_conditioned)
                 if solved is None:
                     n_singular += 1
                 else:
@@ -374,14 +453,16 @@ def rolling_joint_solve(
                 complete_case = np.isfinite(window_target) & np.isfinite(window_design).all(axis=1)
                 if int(complete_case.sum()) < min_periods:
                     continue
-                solved = _solve_joint_window(
+                solved, ill_conditioned = _solve_joint_window(
                     window_target,
                     window_design,
                     complete_case,
                     fit_intercept,
                     endpoint_weights,
                     penalty_matrix,
+                    cond_warn_threshold,
                 )
+                n_ill_conditioned += int(ill_conditioned)
                 if solved is None:
                     n_singular += 1
                 else:
@@ -389,6 +470,7 @@ def rolling_joint_solve(
 
     if warn_singular:
         _warn_singular(n_singular)
+        _warn_ill_conditioned(n_ill_conditioned, cond_warn_threshold)
     return JointFitResult(
         coef=coef,
         intercept=intercept,
@@ -397,6 +479,8 @@ def rolling_joint_solve(
         sst=sst,
         n_used=n_used,
         n_eff=n_eff,
+        n_singular=n_singular,
+        n_ill_conditioned=n_ill_conditioned,
     )
 
 

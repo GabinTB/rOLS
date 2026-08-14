@@ -1,5 +1,6 @@
 """Tests for low-level rolling estimators."""
 
+import warnings
 from unittest.mock import patch
 
 import numpy as np
@@ -7,6 +8,7 @@ import pandas as pd
 import pytest
 
 import rols.estimators as est
+from rols import RollingOLS
 from rols.estimators import (
     _solve_batch,
     hac_se,
@@ -66,6 +68,136 @@ class TestRollingJointSolve:
         np.testing.assert_allclose(
             reconstructed[valid], targets.to_numpy()[valid], rtol=0, atol=1e-10
         )
+
+
+class TestJointSolverConditioning:
+    """The joint solver factorizes the design and reports unstable windows."""
+
+    @staticmethod
+    def _ill_conditioned_inputs(
+        n_observations: int = 40,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+        rng = np.random.default_rng(0)
+        left, _ = np.linalg.qr(rng.normal(size=(n_observations, 2)))
+        right, _ = np.linalg.qr(rng.normal(size=(2, 2)))
+        design_values = left @ np.diag([1.0, 1e-8]) @ right.T
+        expected = np.array([1.25, -0.75])
+        targets = pd.DataFrame({"asset": design_values @ expected})
+        design = pd.DataFrame(design_values, columns=["x1", "x2"])
+        return targets, design, expected
+
+    def test_qr_recovers_ill_conditioned_coefficients(self):
+        targets, design, expected = self._ill_conditioned_inputs()
+
+        with pytest.warns(RuntimeWarning, match=r"cond\(X'X\)"):
+            fit = rolling_joint_solve(
+                targets,
+                design,
+                window=40,
+                min_periods=40,
+                expanding=False,
+                fit_intercept=False,
+            )
+
+        actual = fit.coef[-1, :, 0]
+        normal_equations = np.linalg.solve(
+            design.to_numpy().T @ design.to_numpy(),
+            design.to_numpy().T @ targets.to_numpy(),
+        )[:, 0]
+        assert np.linalg.cond(design) == pytest.approx(1e8, rel=1e-8)
+        np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-7)
+        assert np.max(np.abs(normal_equations - expected)) > 1e-2
+
+    def test_diagnostic_is_aggregated_across_asset_chunks(self):
+        targets, design, _ = self._ill_conditioned_inputs()
+        targets = pd.concat(
+            [targets.rename(columns={"asset": f"asset_{i}"}) for i in range(3)], axis=1
+        )
+
+        model = RollingOLS(
+            window=40,
+            min_periods=40,
+            fit_intercept=False,
+            dtype="float64",
+            asset_chunk_size=1,
+            cond_warn_threshold=1e10,
+        )
+        with pytest.warns(RuntimeWarning, match="ill-conditioned") as captured:
+            model.fit_transform(design[["x1"]], targets, controls=design[["x2"]])
+
+        assert len(captured) == 1
+        assert "3 window(s)" in str(captured[0].message)
+
+    def test_well_conditioned_input_is_silent(self):
+        rng = np.random.default_rng(34)
+        design = pd.DataFrame(rng.normal(size=(40, 2)), columns=["x1", "x2"])
+        targets = pd.DataFrame({"asset": 1.5 * design["x1"] - 0.5 * design["x2"]})
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            rolling_joint_solve(
+                targets,
+                design,
+                window=20,
+                min_periods=20,
+                expanding=False,
+                fit_intercept=False,
+            )
+
+    def test_warning_can_be_suppressed(self, recwarn):
+        targets, design, _ = self._ill_conditioned_inputs()
+
+        rolling_joint_solve(
+            targets,
+            design,
+            window=40,
+            min_periods=40,
+            expanding=False,
+            fit_intercept=False,
+            warn_singular=False,
+        )
+
+        assert len(recwarn) == 0
+
+    def test_rank_deficient_window_is_nan_and_warned(self):
+        rng = np.random.default_rng(35)
+        column = rng.normal(size=30)
+        design = pd.DataFrame({"x1": column, "x2": column})
+        targets = pd.DataFrame({"asset": rng.normal(size=30)})
+
+        with pytest.warns(RuntimeWarning, match="1 singular window") as captured:
+            fit = rolling_joint_solve(
+                targets,
+                design,
+                window=30,
+                min_periods=30,
+                expanding=False,
+                fit_intercept=False,
+            )
+
+        assert len(captured) == 1
+        assert np.isnan(fit.coef[-1]).all()
+        assert not np.isinf(fit.coef).any()
+
+    def test_qr_agrees_with_normal_equations_when_well_conditioned(self):
+        rng = np.random.default_rng(36)
+        design = pd.DataFrame(rng.normal(size=(50, 3)), columns=["x1", "x2", "x3"])
+        targets = pd.DataFrame(rng.normal(size=(50, 2)), columns=["a1", "a2"])
+
+        fit = rolling_joint_solve(
+            targets,
+            design,
+            window=50,
+            min_periods=50,
+            expanding=False,
+            fit_intercept=False,
+        )
+        normal_equations = np.linalg.solve(
+            design.to_numpy().T @ design.to_numpy(),
+            design.to_numpy().T @ targets.to_numpy(),
+        )
+
+        np.testing.assert_allclose(fit.coef[-1], normal_equations, rtol=0, atol=1e-10)
 
 
 class TestRollingResidualize:
