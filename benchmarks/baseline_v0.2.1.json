@@ -1,0 +1,2170 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "source": "v0.2.1@6c3b836",
+    "rols_version": "0.2.1",
+    "python": "3.10.13",
+    "platform": "macOS-26.5.2-arm64-arm-64bit",
+    "window": 252,
+    "seed": 0,
+    "capture_status": {
+      "complete_sizes": [
+        "tiny",
+        "small",
+        "medium"
+      ],
+      "incomplete_sizes": [
+        "large"
+      ],
+      "note": "One of 12 large cases completed in 637.5 seconds with 5.43 GB peak RSS and an 18.74 GB materialized result. The next case was interrupted during v0.2.1 transform(); rerun the capture command to resume the remaining 11 cases."
+    }
+  },
+  "records": [
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.003335332963615656,
+          "python_peak_bytes": 290220,
+          "peak_rss_bytes": 77479936,
+          "rss_increase_bytes": 458752
+        },
+        "transform": {
+          "wall_seconds": 0.039079542038962245,
+          "python_peak_bytes": 1617581,
+          "peak_rss_bytes": 80445440,
+          "rss_increase_bytes": 2965504
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 4.66697383671999e-06,
+            "python_peak_bytes": 1280,
+            "peak_rss_bytes": 80445440,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.374988980591297e-06,
+            "python_peak_bytes": 440,
+            "peak_rss_bytes": 80445440,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 3.208988346159458e-06,
+            "python_peak_bytes": 440,
+            "peak_rss_bytes": 80445440,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.003738541970960796,
+            "python_peak_bytes": 11609849,
+            "peak_rss_bytes": 92651520,
+            "rss_increase_bytes": 12206080
+          }
+        },
+        "total_wall_seconds": 0.04616366792470217
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.002421584038529545,
+          "python_peak_bytes": 1275095,
+          "peak_rss_bytes": 94240768,
+          "rss_increase_bytes": 1032192
+        },
+        "transform": {
+          "wall_seconds": 0.039378957997541875,
+          "python_peak_bytes": 1701206,
+          "peak_rss_bytes": 95993856,
+          "rss_increase_bytes": 1753088
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 3.1249946914613247e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 95993856,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.4170149117708206e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 95993856,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.667016815394163e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 95993856,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0030561250168830156,
+            "python_peak_bytes": 11607617,
+            "peak_rss_bytes": 97271808,
+            "rss_increase_bytes": 1277952
+          }
+        },
+        "total_wall_seconds": 0.04486487607937306
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0023047500289976597,
+          "python_peak_bytes": 268271,
+          "peak_rss_bytes": 97304576,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.031821042008232325,
+          "python_peak_bytes": 1419992,
+          "peak_rss_bytes": 97714176,
+          "rss_increase_bytes": 409600
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.7500209398567677e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 97714176,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.4999608285725117e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 97714176,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.7909915186464787e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 97714176,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0032513340120203793,
+            "python_peak_bytes": 11607953,
+            "peak_rss_bytes": 99516416,
+            "rss_increase_bytes": 1802240
+          }
+        },
+        "total_wall_seconds": 0.03738416702253744
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0024114580010063946,
+          "python_peak_bytes": 1274389,
+          "peak_rss_bytes": 99549184,
+          "rss_increase_bytes": 16384
+        },
+        "transform": {
+          "wall_seconds": 0.03883908299030736,
+          "python_peak_bytes": 1701206,
+          "peak_rss_bytes": 100843520,
+          "rss_increase_bytes": 1294336
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.9999570213258266e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 100843520,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.582964953035116e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 100843520,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.541986759752035e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 100843520,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0027775829657912254,
+            "python_peak_bytes": 11607617,
+            "peak_rss_bytes": 100859904,
+            "rss_increase_bytes": 16384
+          }
+        },
+        "total_wall_seconds": 0.044035248865839094
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0021202919888310134,
+          "python_peak_bytes": 268271,
+          "peak_rss_bytes": 101040128,
+          "rss_increase_bytes": 16384
+        },
+        "transform": {
+          "wall_seconds": 0.0591658329940401,
+          "python_peak_bytes": 2996507,
+          "peak_rss_bytes": 110067712,
+          "rss_increase_bytes": 9027584
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.8330174498260021e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 110067712,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.9589864425361156e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 110067712,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.582964953035116e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 110067712,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0028022080077789724,
+            "python_peak_bytes": 11607953,
+            "peak_rss_bytes": 110067712,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 0.06409570795949548
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0027122500468976796,
+          "python_peak_bytes": 1274447,
+          "peak_rss_bytes": 110166016,
+          "rss_increase_bytes": 98304
+        },
+        "transform": {
+          "wall_seconds": 0.0747818750096485,
+          "python_peak_bytes": 5009033,
+          "peak_rss_bytes": 118423552,
+          "rss_increase_bytes": 8257536
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.5830231606960297e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 118423552,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.749962732195854e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 118423552,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.458043698221445e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 118423552,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0027302089729346335,
+            "python_peak_bytes": 11607617,
+            "peak_rss_bytes": 118423552,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 0.08023112505907193
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0023162500001490116,
+          "python_peak_bytes": 268271,
+          "peak_rss_bytes": 118423552,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.05859770899405703,
+          "python_peak_bytes": 2996449,
+          "peak_rss_bytes": 120193024,
+          "rss_increase_bytes": 1769472
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.415967173874378e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 120193024,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.167005393654108e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 120193024,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.2919848561286926e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 120193024,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0028052920242771506,
+            "python_peak_bytes": 11607953,
+            "peak_rss_bytes": 120193024,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 0.06372512597590685
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.002531584003008902,
+          "python_peak_bytes": 1274389,
+          "peak_rss_bytes": 120193024,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.07490324997343123,
+          "python_peak_bytes": 5009033,
+          "peak_rss_bytes": 126926848,
+          "rss_increase_bytes": 6733824
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.7500209398567677e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 126926848,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.0840088836848736e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 126926848,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.0840012691915035e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 126926848,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.002953583956696093,
+            "python_peak_bytes": 11607617,
+            "peak_rss_bytes": 126926848,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 0.08039433596422896
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0022654999629594386,
+          "python_peak_bytes": 268271,
+          "peak_rss_bytes": 126926848,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.035710041993297637,
+          "python_peak_bytes": 2996391,
+          "peak_rss_bytes": 127090688,
+          "rss_increase_bytes": 163840
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.207991201430559e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127090688,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.500019036233425e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127090688,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.1249870769679546e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127090688,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0027296250336803496,
+            "python_peak_bytes": 11607953,
+            "peak_rss_bytes": 127090688,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 0.04071199998725206
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0025145839899778366,
+          "python_peak_bytes": 1274389,
+          "peak_rss_bytes": 127107072,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.05032279097940773,
+          "python_peak_bytes": 5009033,
+          "peak_rss_bytes": 127631360,
+          "rss_increase_bytes": 524288
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 3.333028871566057e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127631360,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.0840088836848736e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127631360,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.04198295250535e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127631360,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.002644207968842238,
+            "python_peak_bytes": 11607617,
+            "peak_rss_bytes": 127631360,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 0.05548904195893556
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0022752920049242675,
+          "python_peak_bytes": 268271,
+          "peak_rss_bytes": 127631360,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.03535991598619148,
+          "python_peak_bytes": 2996391,
+          "peak_rss_bytes": 127762432,
+          "rss_increase_bytes": 131072
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.082961145788431e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127762432,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.666027285158634e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127762432,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.7500133253633976e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 127762432,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0028263339772820473,
+            "python_peak_bytes": 11607953,
+            "peak_rss_bytes": 127762432,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 0.04046804097015411
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "tiny",
+      "dimensions": {
+        "T": 500,
+        "N": 20,
+        "K": 3,
+        "q": 2,
+        "slow": false
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.0022469170507974923,
+          "python_peak_bytes": 1274389,
+          "peak_rss_bytes": 127795200,
+          "rss_increase_bytes": 32768
+        },
+        "transform": {
+          "wall_seconds": 0.0528537500067614,
+          "python_peak_bytes": 5009033,
+          "peak_rss_bytes": 129826816,
+          "rss_increase_bytes": 2031616
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.333021257072687e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 129826816,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.00000761449337e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 129826816,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.792046871036291e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 129826816,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.002689959015697241,
+            "python_peak_bytes": 11607617,
+            "peak_rss_bytes": 129826816,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 0.05779675114899874
+      },
+      "output_size_bytes": 1200000
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.016045833006501198,
+          "python_peak_bytes": 1008096,
+          "peak_rss_bytes": 129826816,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.2742438339628279,
+          "python_peak_bytes": 24926282,
+          "peak_rss_bytes": 145817600,
+          "rss_increase_bytes": 15990784
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.9579892978072166e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 145817600,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.9999570213258266e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 145817600,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.7090351320803165e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 145817600,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.08064454095438123,
+            "python_peak_bytes": 233202634,
+            "peak_rss_bytes": 375635968,
+            "rss_increase_bytes": 229818368
+          }
+        },
+        "total_wall_seconds": 0.37093987490516156
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.014058917004149407,
+          "python_peak_bytes": 7068304,
+          "peak_rss_bytes": 375635968,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 1.3007832919829525,
+          "python_peak_bytes": 24879140,
+          "peak_rss_bytes": 375635968,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.9579892978072166e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 375635968,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.2500171326100826e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 375635968,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.9160215742886066e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 375635968,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0813900830107741,
+            "python_peak_bytes": 233202298,
+            "peak_rss_bytes": 413040640,
+            "rss_increase_bytes": 37404672
+          }
+        },
+        "total_wall_seconds": 1.3962384160258807
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.012146624969318509,
+          "python_peak_bytes": 1008096,
+          "peak_rss_bytes": 413040640,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.2618340830085799,
+          "python_peak_bytes": 24922881,
+          "peak_rss_bytes": 413040640,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.541986759752035e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 413040640,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.7499551177024841e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 413040640,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.959037035703659e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 413040640,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.0656852499814704,
+            "python_peak_bytes": 233202634,
+            "peak_rss_bytes": 427556864,
+            "rss_increase_bytes": 14516224
+          }
+        },
+        "total_wall_seconds": 0.339672208938282
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.013503082969691604,
+          "python_peak_bytes": 7068679,
+          "peak_rss_bytes": 427556864,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 1.2342667499906383,
+          "python_peak_bytes": 24879082,
+          "peak_rss_bytes": 427556864,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.4579931050539017e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 427556864,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.7500133253633976e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 427556864,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 9.160139597952366e-07,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 427556864,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.066526833048556,
+            "python_peak_bytes": 233202298,
+            "peak_rss_bytes": 430309376,
+            "rss_increase_bytes": 2752512
+          }
+        },
+        "total_wall_seconds": 1.3143017900292762
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.012147500005085021,
+          "python_peak_bytes": 1008096,
+          "peak_rss_bytes": 430309376,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 1.1051847909693606,
+          "python_peak_bytes": 24918036,
+          "peak_rss_bytes": 430309376,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.7919810488820076e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 430309376,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.249958924949169e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 430309376,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.834006980061531e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 430309376,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.06740304199047387,
+            "python_peak_bytes": 233202634,
+            "peak_rss_bytes": 465453056,
+            "rss_increase_bytes": 35143680
+          }
+        },
+        "total_wall_seconds": 1.1847412089118734
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.01416854199487716,
+          "python_peak_bytes": 7068304,
+          "peak_rss_bytes": 465453056,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 2.587244540976826,
+          "python_peak_bytes": 28036638,
+          "peak_rss_bytes": 465453056,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.4170072972774506e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 465453056,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.2909953258931637e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 465453056,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.292035449296236e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 465453056,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.07304824999300763,
+            "python_peak_bytes": 233202298,
+            "peak_rss_bytes": 575832064,
+            "rss_increase_bytes": 110379008
+          }
+        },
+        "total_wall_seconds": 2.6744663330027834
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.014852541033178568,
+          "python_peak_bytes": 1008096,
+          "peak_rss_bytes": 575832064,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 1.1837544169975445,
+          "python_peak_bytes": 24916879,
+          "peak_rss_bytes": 575832064,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.625049091875553e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 575832064,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.874992787837982e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 575832064,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.458043698221445e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 575832064,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.07955045800190419,
+            "python_peak_bytes": 233202634,
+            "peak_rss_bytes": 578338816,
+            "rss_increase_bytes": 2506752
+          }
+        },
+        "total_wall_seconds": 1.2781643741182052
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.014978124992921948,
+          "python_peak_bytes": 7068304,
+          "peak_rss_bytes": 578338816,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 2.45433525001863,
+          "python_peak_bytes": 28036088,
+          "peak_rss_bytes": 578338816,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.2919848561286926e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 578338816,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.541979145258665e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 578338816,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.333013642579317e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 578338816,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.07106120802927762,
+            "python_peak_bytes": 233202298,
+            "peak_rss_bytes": 590692352,
+            "rss_increase_bytes": 12353536
+          }
+        },
+        "total_wall_seconds": 2.5403797500184737
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.012530417006928474,
+          "python_peak_bytes": 1008038,
+          "peak_rss_bytes": 590692352,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.8138746250187978,
+          "python_peak_bytes": 24916883,
+          "peak_rss_bytes": 590692352,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.959037035703659e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 590692352,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.7090351320803165e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 590692352,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.2909877113997936e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 590692352,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.07921195798553526,
+            "python_peak_bytes": 233202634,
+            "peak_rss_bytes": 591970304,
+            "rss_increase_bytes": 1277952
+          }
+        },
+        "total_wall_seconds": 0.9056219590711407
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.014533917012158781,
+          "python_peak_bytes": 7068304,
+          "peak_rss_bytes": 591970304,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 1.561163124977611,
+          "python_peak_bytes": 28035939,
+          "peak_rss_bytes": 591970304,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 3.0840164981782436e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 591970304,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.6660196706652641e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 591970304,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.500011421740055e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 591970304,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.06455779203679413,
+            "python_peak_bytes": 233202298,
+            "peak_rss_bytes": 606306304,
+            "rss_increase_bytes": 14336000
+          }
+        },
+        "total_wall_seconds": 1.6402610840741545
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.013449374993797392,
+          "python_peak_bytes": 1008096,
+          "peak_rss_bytes": 606306304,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 0.8590598339796998,
+          "python_peak_bytes": 24917459,
+          "peak_rss_bytes": 606306304,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.5830231606960297e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 606306304,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.6249908842146397e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 606306304,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.541986759752035e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 606306304,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.09064925002167001,
+            "python_peak_bytes": 233202634,
+            "peak_rss_bytes": 606470144,
+            "rss_increase_bytes": 163840
+          }
+        },
+        "total_wall_seconds": 0.9631662089959718
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "small",
+      "dimensions": {
+        "T": 1260,
+        "N": 100,
+        "K": 5,
+        "q": 3,
+        "slow": false
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.014376249979250133,
+          "python_peak_bytes": 7068304,
+          "peak_rss_bytes": 606470144,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 1.7934926669695415,
+          "python_peak_bytes": 28035939,
+          "peak_rss_bytes": 606470144,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 3.04199056699872e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 606470144,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.333021257072687e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 606470144,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.5830231606960297e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 606470144,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.07578004099195823,
+            "python_peak_bytes": 233202298,
+            "peak_rss_bytes": 612630528,
+            "rss_increase_bytes": 6160384
+          }
+        },
+        "total_wall_seconds": 1.8836569159757346
+      },
+      "output_size_bytes": 22498560
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04131316702114418,
+          "python_peak_bytes": 7157312,
+          "peak_rss_bytes": 612630528,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 5.1663302080123685,
+          "python_peak_bytes": 852730076,
+          "peak_rss_bytes": 1040121856,
+          "rss_increase_bytes": 427491328
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.5830231606960297e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 1040121856,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.6669509932398796e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 1040121856,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.4170149117708206e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 1040121856,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 1.4676804160117172,
+            "python_peak_bytes": 2630682414,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 2051866624
+          }
+        },
+        "total_wall_seconds": 6.675330458034296
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04567524994490668,
+          "python_peak_bytes": 20882434,
+          "peak_rss_bytes": 3091988480,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 42.91220758401323,
+          "python_peak_bytes": 852223200,
+          "peak_rss_bytes": 3091988480,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.04198295250535e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.1669471859931946e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.415967173874378e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 1.4057407910004258,
+            "python_peak_bytes": 2630680766,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 44.363629249855876
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04111720796208829,
+          "python_peak_bytes": 7157266,
+          "peak_rss_bytes": 3091988480,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 5.243158750003204,
+          "python_peak_bytes": 852733640,
+          "peak_rss_bytes": 3091988480,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.9579892978072166e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.4579854905605316e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.707995008677244e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 1.3174620420322753,
+            "python_peak_bytes": 2630681102,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 6.601744123967364
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04452549997949973,
+          "python_peak_bytes": 20882376,
+          "peak_rss_bytes": 3091988480,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 42.43536616698839,
+          "python_peak_bytes": 852223610,
+          "peak_rss_bytes": 3091988480,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.2090389393270016e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.5420373529195786e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.333021257072687e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 1.2346101659932174,
+            "python_peak_bytes": 2630680766,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 43.714507917058654
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04174229101045057,
+          "python_peak_bytes": 7157266,
+          "peak_rss_bytes": 3091988480,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 14.657347499975003,
+          "python_peak_bytes": 852733808,
+          "peak_rss_bytes": 3091988480,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.541986759752035e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.00001522898674e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.582964953035116e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3091988480,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 1.2026197910308838,
+            "python_peak_bytes": 2630681102,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 219529216
+          }
+        },
+        "total_wall_seconds": 15.90171670698328
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.045435332984197885,
+          "python_peak_bytes": 20882434,
+          "peak_rss_bytes": 3311517696,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 54.177957082982175,
+          "python_peak_bytes": 852224205,
+          "peak_rss_bytes": 3311517696,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.2500171326100826e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.7079873941838741e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.7499551177024841e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 1.3110778330010362,
+            "python_peak_bytes": 2630680766,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 55.534475956927054
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04348941601347178,
+          "python_peak_bytes": 7157266,
+          "peak_rss_bytes": 3311517696,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 14.769382416969165,
+          "python_peak_bytes": 852726451,
+          "peak_rss_bytes": 3311517696,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.9170187190175056e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.541986759752035e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.9170111045241356e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 1.456538708996959,
+            "python_peak_bytes": 2630681102,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 16.26941791799618
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "structural",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04563874995801598,
+          "python_peak_bytes": 20882434,
+          "peak_rss_bytes": 3311517696,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 57.1310095830122,
+          "python_peak_bytes": 852227612,
+          "peak_rss_bytes": 3311517696,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.125045284628868e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.916952896863222e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 2.541986759752035e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 1.218328749993816,
+            "python_peak_bytes": 2630680766,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 58.394983666948974
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04241066600661725,
+          "python_peak_bytes": 7157266,
+          "peak_rss_bytes": 3311517696,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 13.551627375010867,
+          "python_peak_bytes": 852726453,
+          "peak_rss_bytes": 3311517696,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.374988980591297e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.00000761449337e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.2090313248336315e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3311517696,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.8780613749986514,
+            "python_peak_bytes": 2630681102,
+            "peak_rss_bytes": 3602825216,
+            "rss_increase_bytes": 291307520
+          }
+        },
+        "total_wall_seconds": 14.472104000044055
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04506920900894329,
+          "python_peak_bytes": 20882434,
+          "peak_rss_bytes": 3602825216,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 50.682765541016124,
+          "python_peak_bytes": 852222478,
+          "peak_rss_bytes": 3602825216,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.040993422269821e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3602825216,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.00000761449337e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3602825216,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.0830117389559746e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3602825216,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.8214091670233756,
+            "python_peak_bytes": 2630680766,
+            "peak_rss_bytes": 3711254528,
+            "rss_increase_bytes": 108429312
+          }
+        },
+        "total_wall_seconds": 51.54924804106122
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04241741599980742,
+          "python_peak_bytes": 7157266,
+          "peak_rss_bytes": 3711254528,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 13.46292691695271,
+          "python_peak_bytes": 852729093,
+          "peak_rss_bytes": 3711254528,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 1.9170111045241356e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3711254528,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.0420335456728935e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3711254528,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.4579854905605316e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3711254528,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.7623935419833288,
+            "python_peak_bytes": 2630681102,
+            "peak_rss_bytes": 3833167872,
+            "rss_increase_bytes": 121913344
+          }
+        },
+        "total_wall_seconds": 14.267742291965988
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "medium",
+      "dimensions": {
+        "T": 2520,
+        "N": 500,
+        "K": 20,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "scattered",
+      "config": {
+        "lambda_": 0.001,
+        "ewma_halflife": 63,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.04646945802960545,
+          "python_peak_bytes": 20882434,
+          "peak_rss_bytes": 3833167872,
+          "rss_increase_bytes": 0
+        },
+        "transform": {
+          "wall_seconds": 50.357190541981254,
+          "python_peak_bytes": 852222765,
+          "peak_rss_bytes": 3833167872,
+          "rss_increase_bytes": 0
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 2.04198295250535e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3833167872,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 1.3750395737588406e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3833167872,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.6669509932398796e-06,
+            "python_peak_bytes": 24,
+            "peak_rss_bytes": 3833167872,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 0.8425124999484979,
+            "python_peak_bytes": 2630680766,
+            "peak_rss_bytes": 3833167872,
+            "rss_increase_bytes": 0
+          }
+        },
+        "total_wall_seconds": 51.24617758393288
+      },
+      "output_size_bytes": 829019520
+    },
+    {
+      "size": "large",
+      "dimensions": {
+        "T": 5040,
+        "N": 2300,
+        "K": 50,
+        "q": 3,
+        "slow": true
+      },
+      "nan_pattern": "clean",
+      "config": {
+        "lambda_": 0.0,
+        "ewma_halflife": null,
+        "mode": "batched"
+      },
+      "measurements": {
+        "fit": {
+          "wall_seconds": 0.15200958302011713,
+          "python_peak_bytes": 35406229,
+          "peak_rss_bytes": 314834944,
+          "rss_increase_bytes": 37650432
+        },
+        "transform": {
+          "wall_seconds": 84.51555229199585,
+          "python_peak_bytes": 18970975400,
+          "peak_rss_bytes": 4022304768,
+          "rss_increase_bytes": 3707469824
+        },
+        "accessors": {
+          "get_beta": {
+            "wall_seconds": 5.791021976619959e-06,
+            "python_peak_bytes": 1280,
+            "peak_rss_bytes": 4022304768,
+            "rss_increase_bytes": 0
+          },
+          "get_r2": {
+            "wall_seconds": 2.415967173874378e-06,
+            "python_peak_bytes": 440,
+            "peak_rss_bytes": 4022304768,
+            "rss_increase_bytes": 0
+          },
+          "get_residuals": {
+            "wall_seconds": 1.4579854905605316e-06,
+            "python_peak_bytes": 440,
+            "peak_rss_bytes": 4022304768,
+            "rss_increase_bytes": 0
+          },
+          "get_se": {
+            "wall_seconds": 552.8276570410235,
+            "python_peak_bytes": 25530365294,
+            "peak_rss_bytes": 5432770560,
+            "rss_increase_bytes": 1410465792
+          }
+        },
+        "total_wall_seconds": 637.4952285810141
+      },
+      "output_size_bytes": 18744848640
+    }
+  ]
+}
