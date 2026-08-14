@@ -49,6 +49,7 @@ class RollingOLSResult:
     _intercepts: dict[str, pd.DataFrame] = field(default_factory=dict)
     _signals: dict[str, pd.DataFrame] = field(default_factory=dict)
     _r2: dict[str, pd.DataFrame] = field(default_factory=dict)
+    _partial_r2: dict[str, pd.DataFrame] = field(default_factory=dict)
     _residuals: dict[str, pd.DataFrame] = field(default_factory=dict)
     _dof: dict[str, pd.DataFrame] = field(default_factory=dict)
     _n_used: dict[str, pd.DataFrame] = field(default_factory=dict)
@@ -95,9 +96,23 @@ class RollingOLSResult:
         return self._signals[factor]
 
     def get_r2(self, factor: str) -> pd.DataFrame:
-        """Rolling R² (or adjusted R²) for all assets. Shape: (T, N_assets)."""
+        """Full-model rolling R², or adjusted R². Shape: (T, N_assets).
+
+        This measures the fit of the complete model containing ``factor`` and
+        all controls. Use :meth:`get_partial_r2` for the factor's incremental
+        contribution over the controls-only reduced model.
+        """
         self._check_factor(factor)
         return self._r2[factor]
+
+    def get_partial_r2(self, factor: str) -> pd.DataFrame:
+        """Factor partial R², or its adjusted form. Shape: (T, N_assets).
+
+        The unadjusted statistic is ``(SSR_reduced - SSR_full) / SSR_reduced``,
+        where both models use the full fit's complete-case sample.
+        """
+        self._check_factor(factor)
+        return self._partial_r2[factor]
 
     def get_residuals(self, factor: str) -> pd.DataFrame:
         """

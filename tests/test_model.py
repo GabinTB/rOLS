@@ -6,7 +6,7 @@ import pytest
 
 from rols.estimators import rolling_joint_solve, rolling_residualize
 from rols.model import RollingOLS
-from tests.oracle import oracle_rolling
+from tests.oracle import oracle_fit_window, oracle_rolling
 
 
 class TestRollingOLSInit:
@@ -869,6 +869,268 @@ class TestRollingOLSModes:
         assert len(valid) > 0
         assert np.isfinite(valid).all()
         assert (valid <= 1.0).all()
+
+
+class TestRollingOLSR2Definitions:
+    """Full and partial R² use coherent nested fits and effective dof."""
+
+    @pytest.mark.parametrize("n_controls", [0, 1, 3])
+    def test_adjusted_r2_uses_actual_slope_count(self, panel_factory, n_controls):
+        targets, factors, controls = panel_factory(
+            n_observations=50,
+            n_targets=1,
+            n_factors=1,
+            n_controls=n_controls,
+            seed=40,
+        )
+        options = {"window": 20, "min_periods": 20, "dtype": "float64"}
+        unadjusted = RollingOLS(**options).fit_transform(factors, targets, controls=controls)
+        adjusted = RollingOLS(**options, adj_r2=True).fit_transform(
+            factors, targets, controls=controls
+        )
+        expected = oracle_rolling(
+            targets,
+            factors,
+            controls,
+            window=20,
+            min_periods=20,
+            expanding=False,
+        )
+        factor = factors.columns[0]
+
+        np.testing.assert_allclose(
+            adjusted.get_r2(factor),
+            expected["adj_r2"][factor],
+            rtol=1e-9,
+            atol=1e-12,
+            equal_nan=True,
+        )
+        n_slopes = n_controls + 1
+        correction = (20 - 1) / (20 - n_slopes - 1)
+        expected_partial = 1 - (1 - unadjusted.get_partial_r2(factor)) * correction
+        np.testing.assert_allclose(
+            adjusted.get_partial_r2(factor),
+            expected_partial,
+            rtol=1e-9,
+            atol=1e-12,
+            equal_nan=True,
+        )
+        if n_controls:
+            old_adjustment = 1 - (1 - unadjusted.get_r2(factor)) * (20 - 1) / (20 - 2)
+            valid = adjusted.get_r2(factor).notna()
+            assert not np.allclose(
+                adjusted.get_r2(factor).to_numpy()[valid],
+                old_adjustment.to_numpy()[valid],
+            )
+
+    @pytest.mark.parametrize(
+        "nan_pattern", ["none", "target-only", "regressor-only", "both", "structural-gap"]
+    )
+    def test_full_r2_is_bounded_with_intercept(self, panel_factory, nan_pattern):
+        targets, factors, controls = panel_factory(
+            n_observations=50,
+            n_targets=2,
+            n_factors=1,
+            n_controls=2,
+            nan_pattern=nan_pattern,
+            seed=41,
+        )
+        result = RollingOLS(window=18, min_periods=10, dtype="float64").fit_transform(
+            factors, targets, controls=controls
+        )
+        values = result.get_r2(factors.columns[0]).to_numpy()
+        finite = values[np.isfinite(values)]
+
+        assert (finite >= -1e-12).all()
+        assert (finite <= 1.0 + 1e-12).all()
+
+    def test_no_intercept_uses_uncentred_sst(self):
+        factor = pd.DataFrame({"factor": [-2.0, -1.0, 0.0, 1.0, 3.0]})
+        assets = pd.DataFrame({"asset": [4.0, 1.0, 2.0, 5.0, 7.0]})
+        result = RollingOLS(
+            window=5,
+            min_periods=5,
+            fit_intercept=False,
+            dtype="float64",
+        ).fit_transform(factor, assets)
+
+        beta = result.get_beta("factor").iloc[-1, 0]
+        residuals = assets["asset"].to_numpy() - beta * factor["factor"].to_numpy()
+        expected = 1 - np.sum(residuals**2) / np.sum(assets["asset"].to_numpy() ** 2)
+
+        assert result.get_r2("factor").iloc[-1, 0] == pytest.approx(expected, abs=1e-12)
+
+    @pytest.mark.parametrize("adj_r2", [False, True])
+    def test_perfect_fit_has_unit_full_and_partial_r2(self, adj_r2):
+        factor = pd.DataFrame({"factor": np.linspace(-2.0, 3.0, 20)})
+        assets = pd.DataFrame({"asset": 3.0 + 2.0 * factor["factor"]})
+        result = RollingOLS(
+            window=20,
+            min_periods=20,
+            adj_r2=adj_r2,
+            dtype="float64",
+        ).fit_transform(factor, assets)
+
+        assert result.get_r2("factor").iloc[-1, 0] == pytest.approx(1.0, abs=1e-12)
+        assert result.get_partial_r2("factor").iloc[-1, 0] == pytest.approx(1.0, abs=1e-12)
+
+    def test_partial_and_full_r2_have_distinct_meanings(self):
+        rng = np.random.default_rng(42)
+        raw = rng.normal(size=(60, 3))
+        orthogonal, _ = np.linalg.qr(raw)
+        factor = pd.DataFrame({"factor": orthogonal[:, 0]})
+        controls = pd.DataFrame({"control": orthogonal[:, 1]})
+        assets = pd.DataFrame(
+            {"asset": 2.0 * orthogonal[:, 0] + 4.0 * orthogonal[:, 1] + orthogonal[:, 2]}
+        )
+        result = RollingOLS(window=60, dtype="float64").fit_transform(
+            factor, assets, controls=controls
+        )
+
+        full = result.get_r2("factor").iloc[-1, 0]
+        partial = result.get_partial_r2("factor").iloc[-1, 0]
+        assert full != pytest.approx(partial, abs=1e-12)
+
+    def test_partial_and_full_coincide_for_irrelevant_orthogonal_control(self):
+        rng = np.random.default_rng(43)
+        centred = rng.normal(size=(50, 3))
+        centred -= centred.mean(axis=0)
+        basis, _ = np.linalg.qr(centred)
+        factor = pd.DataFrame({"factor": basis[:, 0]})
+        assets = pd.DataFrame({"asset": 2.0 * basis[:, 0] + basis[:, 1]})
+        controls = pd.DataFrame({"control": basis[:, 2]})
+        result = RollingOLS(window=50, dtype="float64").fit_transform(
+            factor, assets, controls=controls
+        )
+
+        assert result.get_partial_r2("factor").iloc[-1, 0] == pytest.approx(
+            result.get_r2("factor").iloc[-1, 0], abs=1e-12
+        )
+
+    def test_partial_r2_matches_nested_oracle_fits_on_full_sample(self):
+        rng = np.random.default_rng(44)
+        factor = pd.DataFrame({"factor": rng.normal(size=20)})
+        controls = pd.DataFrame({"control": rng.normal(size=20)})
+        assets = pd.DataFrame(
+            {"asset": 1.0 + 2.0 * factor["factor"] - controls["control"] + rng.normal(size=20)}
+        )
+        factor.loc[3, "factor"] = np.nan
+        result = RollingOLS(window=20, min_periods=15, dtype="float64").fit_transform(
+            factor, assets, controls=controls
+        )
+        complete = assets["asset"].notna() & factor["factor"].notna() & controls["control"].notna()
+        full = oracle_fit_window(
+            assets.loc[complete, "asset"].to_numpy(),
+            np.column_stack([controls.loc[complete, "control"], factor.loc[complete, "factor"]]),
+            fit_intercept=True,
+            weights=None,
+            penalty=None,
+        )
+        reduced = oracle_fit_window(
+            assets.loc[complete, "asset"].to_numpy(),
+            controls.loc[complete, ["control"]].to_numpy(),
+            fit_intercept=True,
+            weights=None,
+            penalty=None,
+        )
+        expected = (reduced.ssr - full.ssr) / reduced.ssr
+
+        assert result.get_partial_r2("factor").iloc[-1, 0] == pytest.approx(expected, abs=1e-12)
+
+    def test_adjusted_partial_r2_guard_returns_nan_not_inf(self):
+        factor = pd.DataFrame({"factor": np.arange(8.0)})
+        assets = pd.DataFrame({"asset": np.arange(8.0) ** 2})
+        result = RollingOLS(
+            window=5,
+            min_periods=2,
+            adj_r2=True,
+            dtype="float64",
+        ).fit_transform(factor, assets)
+        partial = result.get_partial_r2("factor").to_numpy()
+
+        assert np.isnan(partial[1, 0])
+        assert not np.isinf(partial).any()
+
+    def test_ewma_adjustment_uses_effective_sample_size(self, panel_factory):
+        targets, factors, controls = panel_factory(
+            n_observations=40,
+            n_targets=1,
+            n_factors=1,
+            n_controls=1,
+            seed=45,
+        )
+        result = RollingOLS(
+            window=20,
+            min_periods=15,
+            ewma_halflife=4,
+            adj_r2=True,
+            dtype="float64",
+        ).fit_transform(factors, targets, controls=controls)
+        expected = oracle_rolling(
+            targets,
+            factors,
+            controls,
+            window=20,
+            min_periods=15,
+            expanding=False,
+            ewma_halflife=4,
+        )
+        factor = factors.columns[0]
+
+        np.testing.assert_allclose(
+            result.get_r2(factor),
+            expected["adj_r2"][factor],
+            rtol=1e-9,
+            atol=1e-12,
+            equal_nan=True,
+        )
+
+    def test_uniform_weights_reproduce_unweighted_r2(self, panel_factory, monkeypatch):
+        targets, factors, controls = panel_factory(
+            n_observations=40,
+            n_targets=2,
+            n_factors=1,
+            n_controls=1,
+            seed=47,
+        )
+        options = {
+            "window": 20,
+            "min_periods": 15,
+            "adj_r2": True,
+            "dtype": "float64",
+        }
+        unweighted = RollingOLS(**options).fit_transform(factors, targets, controls=controls)
+        uniform_model = RollingOLS(**options)
+        monkeypatch.setattr(uniform_model, "_weights", lambda: np.ones(20))
+        uniform = uniform_model.fit_transform(factors, targets, controls=controls)
+        factor = factors.columns[0]
+
+        np.testing.assert_array_equal(uniform.get_r2(factor), unweighted.get_r2(factor))
+        np.testing.assert_array_equal(
+            uniform.get_partial_r2(factor), unweighted.get_partial_r2(factor)
+        )
+
+    def test_reported_full_r2_reconstructs_from_window_residuals(self):
+        rng = np.random.default_rng(46)
+        factors = pd.DataFrame({"factor": rng.normal(size=30)})
+        controls = pd.DataFrame({"control": rng.normal(size=30)})
+        assets = pd.DataFrame({"asset": rng.normal(size=30)})
+        result = RollingOLS(window=20, dtype="float64").fit_transform(
+            factors, assets, controls=controls, return_control_betas=True
+        )
+        window = slice(10, 30)
+        intercept = result.get_intercept("factor").iloc[-1, 0]
+        factor_beta = result.get_beta("factor").iloc[-1, 0]
+        control_beta = result.get_control_beta("factor", "control").iloc[-1, 0]
+        fitted = (
+            intercept
+            + factor_beta * factors["factor"].iloc[window]
+            + control_beta * controls["control"].iloc[window]
+        )
+        target = assets["asset"].iloc[window]
+        expected = 1 - np.sum((target - fitted) ** 2) / np.sum((target - target.mean()) ** 2)
+
+        assert result.get_r2("factor").iloc[-1, 0] == pytest.approx(expected, abs=1e-12)
 
 
 class TestRollingOLSRidge:

@@ -520,6 +520,28 @@ class RollingOLS:
                 where=fit.sst > self.denom_tol,
             )
             r2_values = 1.0 - r2_values
+
+            if self._controls_fitted is None:
+                reduced_ssr = fit.sst
+            else:
+                factor_is_finite = pd.Series(
+                    np.isfinite(self._factors_fitted[fac].to_numpy()),
+                    index=assets.index,
+                )
+                reduced_targets = assets.where(factor_is_finite, axis=0)
+                reduced_fit = self._solve_targets(
+                    reduced_targets,
+                    self._controls_fitted,
+                    penalty=self._penalty_matrix(len(self._control_cols), n_factors=0),
+                )
+                reduced_ssr = reduced_fit.ssr
+            partial_r2_values = np.divide(
+                reduced_ssr - fit.ssr,
+                reduced_ssr,
+                out=np.full_like(fit.ssr, np.nan),
+                where=reduced_ssr > self.denom_tol,
+            )
+
             if self.adj_r2:
                 numerator_dof = fit.n_eff - int(self.fit_intercept)
                 adjustment = np.divide(
@@ -529,7 +551,13 @@ class RollingOLS:
                     where=residual_dof > 0,
                 )
                 r2_values = 1.0 - (1.0 - r2_values) * adjustment
+                partial_r2_values = 1.0 - (1.0 - partial_r2_values) * adjustment
             r2 = pd.DataFrame(r2_values, index=assets.index, columns=assets.columns)
+            partial_r2 = pd.DataFrame(
+                partial_r2_values,
+                index=assets.index,
+                columns=assets.columns,
+            )
 
             f_orig = self._factors_raw[fac]
             signal = (
@@ -540,6 +568,7 @@ class RollingOLS:
             result._intercepts[fac] = intercept
             result._signals[fac] = signal
             result._r2[fac] = r2
+            result._partial_r2[fac] = partial_r2
             result._residuals[fac] = residuals
             result._dof[fac] = dof
             result._n_used[fac] = n_used

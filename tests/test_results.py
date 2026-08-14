@@ -67,6 +67,17 @@ class TestRollingOLSResultGetters:
         if len(r2_valid) > 0:
             assert (r2_valid >= 0).all() and (r2_valid <= 1).all()
 
+    def test_get_partial_r2(self, setup_result):
+        """Partial R² is exposed separately from full-model R²."""
+        partial_r2 = setup_result.get_partial_r2("f1")
+
+        assert isinstance(partial_r2, pd.DataFrame)
+        assert partial_r2.shape == (100, 3)
+
+    def test_get_partial_r2_invalid_factor_raises(self, setup_result):
+        with pytest.raises(KeyError):
+            setup_result.get_partial_r2("invalid_factor")
+
     def test_get_residuals(self, setup_result):
         """Test get_residuals method."""
         result = setup_result
