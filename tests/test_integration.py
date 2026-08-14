@@ -295,27 +295,26 @@ class TestIntegrationStatisticalProperties:
         assert nans_early >= nans_late
 
     def test_ridge_vs_ols_betas(self):
-        """Test that Ridge produces different betas from OLS with collinear data."""
-        np.random.seed(42)
-        T = 100
-        # Create correlated but not perfectly collinear regressors
-        f1 = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
-        f2 = pd.DataFrame(f1.values * 0.7 + 0.3 * np.random.randn(T, 1), columns=["f2"])
-        f3 = pd.DataFrame(f1.values * 0.5 + 0.5 * np.random.randn(T, 1), columns=["f3"])
+        """Ridge changes and strictly shrinks betas without controls."""
+        rng = np.random.default_rng(42)
+        factor_values = rng.normal(size=100)
+        factors = pd.DataFrame({"factor": factor_values})
+        assets = pd.DataFrame({"asset": 3.0 + 2.0 * factor_values})
 
-        factors = pd.concat([f1, f2, f3], axis=1)
-        assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
+        beta_ols = (
+            RollingOLS(window=30, lambda_=0.0, dtype="float64")
+            .fit_transform(factors, assets)
+            .get_beta("factor")
+        )
+        beta_ridge = (
+            RollingOLS(window=30, lambda_=1000.0, dtype="float64")
+            .fit_transform(factors, assets)
+            .get_beta("factor")
+        )
+        valid = beta_ols.notna() & beta_ridge.notna()
 
-        ols_result = RollingOLS(window=30, lambda_=0.0).fit_transform(factors, assets)
-        ridge_result = RollingOLS(window=30, lambda_=0.001).fit_transform(factors, assets)
-
-        beta_ols = ols_result.get_beta("f1")
-        beta_ridge = ridge_result.get_beta("f1")
-
-        # With ridge regularization, typically the coefficients are different
-        # However, they might be equal if both produce all NaNs or similar values
-        # So we check that they're different or at least one produces values
-        assert (beta_ols.notna().any().any()) or (beta_ridge.notna().any().any())
+        assert not np.allclose(beta_ols.to_numpy()[valid], beta_ridge.to_numpy()[valid])
+        assert (np.abs(beta_ridge.to_numpy()[valid]) < np.abs(beta_ols.to_numpy()[valid])).all()
 
 
 class TestIntegrationErrorHandling:

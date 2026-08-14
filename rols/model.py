@@ -13,9 +13,9 @@ Design
 Each factor is fitted with the controls in one direct joint solve. Every
 reported quantity for an endpoint and target comes from that same fit.
 
-Ridge regularization (lambda_ > 0) adds λI to X'X before solving — stabilizes
-estimation when regressors are collinear, at the cost of shrinking betas toward
-zero. Set lambda_=0.0 for standard OLS (default).
+Ridge regularization uses a normalized weighted loss and standardizes penalized
+regressors within each complete-case window. Factors are always penalized when
+lambda_ > 0; controls are penalized by default. The intercept is never penalized.
 
 Rolling Gram-Schmidt orthogonalization can be applied independently to factors
 and/or controls. Column order determines priority: first column is untouched,
@@ -262,8 +262,12 @@ class RollingOLS:
     fit_intercept : bool
         Include an explicit intercept in every window fit. Defaults to True.
     lambda_ : float
-        Ridge regularization strength. 0.0 = standard OLS (default).
-        Adding a small value (e.g. 1e-4) stabilizes collinear regressors.
+        Ridge strength for the normalized weighted objective. Penalized
+        regressors are standardized within each complete-case window before
+        solving and returned in their original units. 0.0 gives OLS.
+    penalize_controls : bool
+        Penalize controls along with factors when ``lambda_ > 0``. Defaults to
+        True. Set to False to treat controls as unpenalized nuisance regressors.
     ewma_halflife : int, optional
         If set, observations within each window are exponentially weighted so
         recent data carries more weight: an observation `ewma_halflife` steps
@@ -341,6 +345,7 @@ class RollingOLS:
         expanding: bool = False,
         fit_intercept: bool = True,
         lambda_: float = 0.0,
+        penalize_controls: bool = True,
         adj_r2: bool = False,
         lag_signal: bool = False,
         hac_lags: int | None = None,
@@ -356,12 +361,15 @@ class RollingOLS:
                 "windows have variable length, so the EWMA weight vector cannot "
                 "be precomputed."
             )
+        if lambda_ < 0:
+            raise ValueError("lambda_ must be non-negative")
 
         self.window = window
         self.min_periods = min_periods if min_periods is not None else window
         self.expanding = expanding
         self.fit_intercept = fit_intercept
         self.lambda_ = lambda_
+        self.penalize_controls = penalize_controls
         self.ewma_halflife = ewma_halflife
         self.adj_r2 = adj_r2
         self.lag_signal = lag_signal
@@ -385,7 +393,27 @@ class RollingOLS:
             return None
         return _ewma_weights(self.ewma_halflife, self.window)
 
-    def _solve_targets(self, targets: pd.DataFrame, design: pd.DataFrame) -> JointFitResult:
+    def _penalty_matrix(self, n_controls: int, n_factors: int) -> np.ndarray | None:
+        """Build the diagonal penalty in standardized solve coordinates."""
+        if self.lambda_ == 0:
+            return None
+        n_slopes = n_controls + n_factors
+        penalty = np.zeros((n_slopes + int(self.fit_intercept),) * 2)
+        slope_offset = int(self.fit_intercept)
+        if self.penalize_controls:
+            control_positions = np.arange(slope_offset, slope_offset + n_controls)
+            penalty[control_positions, control_positions] = self.lambda_
+        factor_start = slope_offset + n_controls
+        factor_positions = np.arange(factor_start, factor_start + n_factors)
+        penalty[factor_positions, factor_positions] = self.lambda_
+        return penalty
+
+    def _solve_targets(
+        self,
+        targets: pd.DataFrame,
+        design: pd.DataFrame,
+        penalty: np.ndarray | None = None,
+    ) -> JointFitResult:
         """Run the joint solver in target-column chunks and combine its outputs."""
         chunks = [
             targets.columns[i : i + self.asset_chunk_size]
@@ -399,6 +427,7 @@ class RollingOLS:
                 min_periods=self.min_periods,
                 expanding=self.expanding,
                 fit_intercept=self.fit_intercept,
+                penalty=penalty,
                 weights=self._weights(),
                 warn_singular=self.warn_singular,
             )
@@ -538,7 +567,11 @@ class RollingOLS:
         # Preserve the controls-only residual accessor using a separate direct
         # current-window model. It is not used to estimate factor coefficients.
         if self._controls_fitted is not None:
-            controls_only_fit = self._solve_targets(assets, self._controls_fitted)
+            controls_only_fit = self._solve_targets(
+                assets,
+                self._controls_fitted,
+                penalty=self._penalty_matrix(len(self._control_cols), n_factors=0),
+            )
             asset_resids = pd.DataFrame(
                 controls_only_fit.resid_endpoint,
                 index=assets.index,
@@ -561,13 +594,18 @@ class RollingOLS:
         # Controls-only endpoint residuals, retained for the existing accessor.
         result._factor_adjusted_returns = asset_resids
 
+        direct_control_betas: dict[str, dict[str, pd.DataFrame]] = {}
         for fac in self._factor_cols:
             design_parts = []
             if self._controls_fitted is not None:
                 design_parts.append(self._controls_fitted)
             design_parts.append(self._factors_fitted[[fac]])
             design = pd.concat(design_parts, axis=1)
-            fit = self._solve_targets(assets, design)
+            fit = self._solve_targets(
+                assets,
+                design,
+                penalty=self._penalty_matrix(len(self._control_cols), n_factors=1),
+            )
 
             beta = pd.DataFrame(fit.coef[:, -1, :], index=assets.index, columns=assets.columns)
             intercept = pd.DataFrame(fit.intercept, index=assets.index, columns=assets.columns)
@@ -606,13 +644,25 @@ class RollingOLS:
             result._dof[fac] = dof
             result._n_used[fac] = n_used
             result._factor_values[fac] = self._factors_fitted[fac]
+            if return_control_betas and self._controls_fitted is not None and self.lambda_ > 0:
+                direct_control_betas[fac] = {
+                    control: pd.DataFrame(
+                        fit.coef[:, control_position, :],
+                        index=assets.index,
+                        columns=assets.columns,
+                    )
+                    for control_position, control in enumerate(self._control_cols)
+                }
+
+        if direct_control_betas:
+            result._control_betas = direct_control_betas
 
         # Control betas via FWL — independent of factor, so computed once and
         # shared across all factors. For each control, partial it (and the
         # assets) against all OTHER controls, then rolling univariate OLS.
         control_betas: dict = {}
         weights = self._weights()
-        if return_control_betas and self._controls_fitted is not None:
+        if return_control_betas and self._controls_fitted is not None and self.lambda_ == 0:
             for ctrl in self._control_cols:
                 other_controls = [c for c in self._control_cols if c != ctrl]
                 if other_controls:

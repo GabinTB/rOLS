@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from rols.estimators import rolling_residualize
+from rols.estimators import rolling_joint_solve, rolling_residualize
 from rols.model import RollingOLS
 from tests.oracle import oracle_rolling
 
@@ -20,6 +20,7 @@ class TestRollingOLSInit:
         assert ols.expanding is False
         assert ols.fit_intercept is True
         assert ols.lambda_ == 0.0
+        assert ols.penalize_controls is True
         assert ols.adj_r2 is False
         assert ols.lag_signal is False
         assert ols.hac_lags is None
@@ -32,6 +33,7 @@ class TestRollingOLSInit:
             expanding=True,
             fit_intercept=False,
             lambda_=0.01,
+            penalize_controls=False,
             adj_r2=True,
             lag_signal=True,
             hac_lags=5,
@@ -41,6 +43,7 @@ class TestRollingOLSInit:
         assert ols.expanding is True
         assert ols.fit_intercept is False
         assert ols.lambda_ == 0.01
+        assert ols.penalize_controls is False
         assert ols.adj_r2 is True
         assert ols.lag_signal is True
         assert ols.hac_lags == 5
@@ -49,6 +52,10 @@ class TestRollingOLSInit:
         """Test that min_periods defaults to window."""
         ols = RollingOLS(window=100)
         assert ols.min_periods == 100
+
+    def test_negative_lambda_raises(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            RollingOLS(lambda_=-0.1)
 
 
 class TestRollingOLSFit:
@@ -686,6 +693,218 @@ class TestRollingOLSModes:
         assert len(valid) > 0
         assert np.isfinite(valid).all()
         assert (valid <= 1.0).all()
+
+
+class TestRollingOLSRidge:
+    """Ridge uses one normalized, standardized joint window solve."""
+
+    @pytest.mark.parametrize("n_observations", [20, 80])
+    def test_closed_form_is_stable_across_window_lengths(self, n_observations):
+        rng = np.random.default_rng(n_observations)
+        factor_values = rng.normal(size=n_observations)
+        factor_values = (factor_values - factor_values.mean()) / factor_values.std(ddof=0)
+        factors = pd.DataFrame({"factor": factor_values})
+        assets = pd.DataFrame({"asset": 3.0 + 2.0 * factor_values})
+        lambda_ = 0.25
+
+        result = RollingOLS(
+            window=n_observations,
+            lambda_=lambda_,
+            dtype="float64",
+        ).fit_transform(factors, assets)
+
+        assert result.get_beta("factor").iloc[-1, 0] == pytest.approx(
+            2.0 / (1.0 + lambda_), abs=1e-12
+        )
+        assert result.get_intercept("factor").iloc[-1, 0] == pytest.approx(3.0, abs=1e-12)
+
+    @pytest.mark.parametrize("n_controls", [1, 3])
+    @pytest.mark.parametrize("penalize_controls", [True, False])
+    @pytest.mark.parametrize("fit_intercept", [True, False])
+    @pytest.mark.parametrize("ewma_halflife", [None, 7])
+    def test_joint_ridge_with_controls_matches_oracle(
+        self,
+        panel_factory,
+        n_controls,
+        penalize_controls,
+        fit_intercept,
+        ewma_halflife,
+    ):
+        targets, factors, controls = panel_factory(
+            n_observations=70,
+            n_targets=2,
+            n_factors=1,
+            n_controls=n_controls,
+            correlation=0.7,
+            nonzero_means=True,
+            seed=21,
+        )
+        lambda_ = 0.4
+        result = RollingOLS(
+            window=25,
+            min_periods=15,
+            lambda_=lambda_,
+            penalize_controls=penalize_controls,
+            fit_intercept=fit_intercept,
+            ewma_halflife=ewma_halflife,
+            dtype="float64",
+        ).fit_transform(factors, targets, controls=controls, return_control_betas=True)
+        expected = oracle_rolling(
+            targets,
+            factors,
+            controls,
+            window=25,
+            min_periods=15,
+            expanding=False,
+            fit_intercept=fit_intercept,
+            lambda_=lambda_,
+            ewma_halflife=ewma_halflife,
+            penalize_controls=penalize_controls,
+        )
+        factor = factors.columns[0]
+
+        comparisons = {
+            "beta": result.get_beta(factor),
+            "intercept": result.get_intercept(factor),
+            "residuals": result.get_residuals(factor),
+            "r2": result.get_r2(factor),
+        }
+        for quantity, actual in comparisons.items():
+            np.testing.assert_allclose(
+                actual,
+                expected[quantity][factor],
+                rtol=1e-9,
+                atol=1e-12,
+                equal_nan=True,
+            )
+        for control in controls.columns:
+            np.testing.assert_allclose(
+                result.get_control_beta(factor, control),
+                expected["control_beta"][factor][control],
+                rtol=1e-9,
+                atol=1e-12,
+                equal_nan=True,
+            )
+
+    def test_large_penalty_shrinks_slopes_not_intercept(self):
+        rng = np.random.default_rng(22)
+        factor_values = rng.normal(loc=4.0, size=60)
+        factors = pd.DataFrame({"factor": factor_values})
+        assets = pd.DataFrame({"asset": 7.0 + 2.0 * factor_values})
+
+        result = RollingOLS(window=60, lambda_=1e10, dtype="float64").fit_transform(factors, assets)
+
+        assert abs(result.get_beta("factor").iloc[-1, 0]) < 1e-8
+        assert result.get_intercept("factor").iloc[-1, 0] == pytest.approx(
+            assets["asset"].mean(), abs=1e-8
+        )
+
+    def test_scale_invariance(self):
+        rng = np.random.default_rng(23)
+        factors = pd.DataFrame(rng.normal(size=(80, 2)), columns=["f1", "f2"])
+        assets = pd.DataFrame(
+            {"asset": 2.0 + 1.5 * factors["f1"] - 0.75 * factors["f2"] + rng.normal(size=80)}
+        )
+        scaled_factors = factors.copy()
+        scaled_factors["f1"] *= 1000.0
+
+        baseline = RollingOLS(window=30, lambda_=0.6, dtype="float64").fit_transform(
+            factors, assets
+        )
+        scaled = RollingOLS(window=30, lambda_=0.6, dtype="float64").fit_transform(
+            scaled_factors, assets
+        )
+
+        np.testing.assert_allclose(
+            scaled.get_beta("f1") * 1000.0,
+            baseline.get_beta("f1"),
+            rtol=1e-10,
+            atol=1e-12,
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            scaled.get_beta("f2"),
+            baseline.get_beta("f2"),
+            rtol=1e-10,
+            atol=1e-12,
+            equal_nan=True,
+        )
+
+    def test_uniform_weights_reproduce_unweighted_ridge(self):
+        rng = np.random.default_rng(24)
+        factors = pd.DataFrame(rng.normal(size=(50, 2)), columns=["f1", "f2"])
+        assets = pd.DataFrame(rng.normal(size=(50, 2)), columns=["a1", "a2"])
+        penalty = np.diag([0.0, 0.5, 0.5])
+
+        unweighted = rolling_joint_solve(assets, factors, 20, 10, False, penalty=penalty)
+        uniform = rolling_joint_solve(
+            assets,
+            factors,
+            20,
+            10,
+            False,
+            penalty=penalty,
+            weights=np.ones(20),
+        )
+
+        np.testing.assert_allclose(uniform.coef, unweighted.coef, atol=1e-12, equal_nan=True)
+        np.testing.assert_allclose(
+            uniform.intercept, unweighted.intercept, atol=1e-12, equal_nan=True
+        )
+
+    def test_zero_penalty_reproduces_ols(self):
+        rng = np.random.default_rng(25)
+        factors = pd.DataFrame(rng.normal(size=(50, 2)), columns=["f1", "f2"])
+        assets = pd.DataFrame(rng.normal(size=(50, 2)), columns=["a1", "a2"])
+
+        ols = rolling_joint_solve(assets, factors, 20, 10, False)
+        zero_penalty = rolling_joint_solve(assets, factors, 20, 10, False, penalty=np.zeros((3, 3)))
+
+        np.testing.assert_allclose(zero_penalty.coef, ols.coef, atol=1e-12, equal_nan=True)
+        np.testing.assert_allclose(
+            zero_penalty.intercept, ols.intercept, atol=1e-12, equal_nan=True
+        )
+
+    def test_joint_ridge_differs_from_penalized_fwl_hybrid(self):
+        rng = np.random.default_rng(26)
+        factor_values = 2.0 + rng.normal(size=100)
+        control_values = 1.0 + 0.8 * factor_values + rng.normal(scale=0.2, size=100)
+        factors = pd.DataFrame({"factor": factor_values})
+        controls = pd.DataFrame({"control": control_values})
+        assets = pd.DataFrame(
+            {"asset": 5.0 + 2.0 * factor_values - 3.0 * control_values + rng.normal(size=100)}
+        )
+        lambda_ = 0.5
+
+        direct = (
+            RollingOLS(window=20, lambda_=lambda_, dtype="float64")
+            .fit_transform(factors, assets, controls=controls)
+            .get_beta("factor")
+        )
+        factor_residual = rolling_residualize(
+            factors,
+            controls,
+            window=20,
+            min_periods=20,
+            expanding=False,
+            ridge_lambda=lambda_,
+        )["factor"]
+        asset_residual = rolling_residualize(
+            assets,
+            controls,
+            window=20,
+            min_periods=20,
+            expanding=False,
+            ridge_lambda=lambda_,
+        )
+        hybrid = (
+            asset_residual.rolling(20, min_periods=20)
+            .cov(factor_residual)
+            .div(factor_residual.rolling(20, min_periods=20).var(), axis=0)
+        )
+        valid = direct.notna() & hybrid.notna()
+
+        assert not np.allclose(direct.to_numpy()[valid], hybrid.to_numpy()[valid])
 
 
 class TestRollingOLSEWMA:

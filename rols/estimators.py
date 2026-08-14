@@ -118,14 +118,36 @@ def _solve_joint_window(
             return None
         complete_weights = complete_weights / weight_sum
 
-    gram = complete_design.T @ (complete_weights[:, None] * complete_design) + penalty
-    rhs = complete_design.T @ (complete_weights * complete_target)
+    penalty_diagonal = np.diag(penalty)
+    penalized_columns = np.flatnonzero(penalty_diagonal > 0)
+    solve_design = complete_design.copy()
+    means = np.zeros(solve_design.shape[1])
+    scales = np.ones(solve_design.shape[1])
+    for column in penalized_columns:
+        values = solve_design[:, column]
+        if fit_intercept:
+            means[column] = np.sum(complete_weights * values)
+            solve_design[:, column] = values - means[column]
+            scale_squared = np.sum(complete_weights * solve_design[:, column] ** 2)
+        else:
+            scale_squared = np.sum(complete_weights * values**2)
+        scales[column] = np.sqrt(scale_squared)
+        if not np.isfinite(scales[column]) or scales[column] <= np.finfo(float).eps:
+            return None
+        solve_design[:, column] /= scales[column]
+
+    gram = solve_design.T @ (complete_weights[:, None] * solve_design) + penalty
+    rhs = solve_design.T @ (complete_weights * complete_target)
     try:
-        parameters = np.linalg.solve(gram, rhs)
+        solve_parameters = np.linalg.solve(gram, rhs)
     except np.linalg.LinAlgError:
         return None
-    if not np.isfinite(parameters).all():
+    if not np.isfinite(solve_parameters).all():
         return None
+
+    parameters = solve_parameters / scales
+    if fit_intercept:
+        parameters[0] -= np.sum(parameters[1:] * means[1:])
 
     residuals = complete_target - complete_design @ parameters
     ssr = float(np.sum(complete_weights * residuals**2))
@@ -187,6 +209,10 @@ def rolling_joint_solve(
             raise ValueError(f"penalty must have shape ({n_parameters}, {n_parameters})")
         if not np.isfinite(penalty_matrix).all():
             raise ValueError("penalty must be finite")
+        if not np.allclose(penalty_matrix, np.diag(np.diag(penalty_matrix))):
+            raise ValueError("penalty must be diagonal")
+        if (np.diag(penalty_matrix) < 0).any():
+            raise ValueError("penalty entries must be non-negative")
         if fit_intercept and not np.allclose(penalty_matrix[0], 0.0):
             raise ValueError("the intercept cannot be penalized")
         if fit_intercept and not np.allclose(penalty_matrix[:, 0], 0.0):
@@ -243,11 +269,37 @@ def rolling_joint_solve(
             if supplied_weights is None
             else supplied_weights / supplied_weights.sum()
         )
-        weighted_design_windows = design_windows * window_weights[None, :, None]
-        gram = np.einsum("twi,twj->tij", weighted_design_windows, design_windows)
+        penalty_diagonal = np.diag(penalty_matrix)
+        penalized_columns = np.flatnonzero(penalty_diagonal > 0)
+        solve_design_windows = design_windows.copy()
+        means = np.zeros((solve_design_windows.shape[0], n_parameters))
+        scales = np.ones((solve_design_windows.shape[0], n_parameters))
+        for column in penalized_columns:
+            values = solve_design_windows[:, :, column]
+            if fit_intercept:
+                means[:, column] = np.einsum("w,tw->t", window_weights, values)
+                solve_design_windows[:, :, column] = values - means[:, None, column]
+                scale_squared = np.einsum(
+                    "w,tw->t", window_weights, solve_design_windows[:, :, column] ** 2
+                )
+            else:
+                scale_squared = np.einsum("w,tw->t", window_weights, values**2)
+            scales[:, column] = np.sqrt(scale_squared)
+
+        valid_scales = np.isfinite(scales).all(axis=1) & (
+            scales[:, penalized_columns] > np.finfo(float).eps
+        ).all(axis=1)
+        safe_scales = np.where(valid_scales[:, None], scales, 1.0)
+        solve_design_windows /= safe_scales[:, None, :]
+        weighted_design_windows = solve_design_windows * window_weights[None, :, None]
+        gram = np.einsum("twi,twj->tij", weighted_design_windows, solve_design_windows)
         gram += penalty_matrix
         rhs = np.einsum("twi,twn->tin", weighted_design_windows, target_windows)
-        parameters = _solve_batch(gram, rhs, warn_singular=warn_singular)
+        solve_parameters = _solve_batch(gram, rhs, warn_singular=warn_singular)
+        parameters = solve_parameters / safe_scales[:, :, None]
+        if fit_intercept:
+            parameters[:, 0, :] -= np.einsum("tk,tkn->tn", means[:, 1:], parameters[:, 1:, :])
+        parameters[~valid_scales] = np.nan
         endpoints = np.arange(parameters.shape[0]) + window - 1
         if fit_intercept:
             intercept[endpoints] = parameters[:, 0, :]
