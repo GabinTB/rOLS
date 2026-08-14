@@ -56,7 +56,7 @@ class TestRollingOLSFit:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
 
         ols = RollingOLS(window=20)
-        result = ols.fit(factors)
+        ols.fit(factors)
 
         assert ols._is_fitted
         assert list(ols._factor_cols) == ["f1", "f2"]
@@ -204,9 +204,7 @@ class TestRollingOLSTransform:
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
         ols = RollingOLS(window=20)
-        result = ols.fit_transform(
-            factors, assets, controls=controls, return_control_betas=True
-        )
+        result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         cb = result.get_control_beta("f1", "c1")
         assert cb.shape == (T, 3)
@@ -221,9 +219,7 @@ class TestRollingOLSTransform:
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
         ols = RollingOLS(window=20)
-        result = ols.fit_transform(
-            factors, assets, controls=controls, return_control_betas=True
-        )
+        result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         pd.testing.assert_frame_equal(
             result.get_control_beta("f1", "c1"),
@@ -239,9 +235,7 @@ class TestRollingOLSTransform:
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
         ols = RollingOLS(window=30)
-        result = ols.fit_transform(
-            factors, assets, controls=controls, return_control_betas=True
-        )
+        result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
         joint = result.get_control_beta("f1", "c1")
 
         # Plain rolling univariate beta of assets on the single control
@@ -266,9 +260,7 @@ class TestRollingOLSTransform:
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
         ols = RollingOLS(window=40)
-        result = ols.fit_transform(
-            factors, assets, controls=controls, return_control_betas=True
-        )
+        result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
         joint = result.get_control_beta("f1", "c1")
 
         # Marginal univariate beta ignoring c2
@@ -501,7 +493,7 @@ class TestRollingOLSEWMA:
         assert beta_eq.shape == beta_ew.shape
         mask = beta_eq.notna() & beta_ew.notna()
         assert mask.values.any()
-        diff = (beta_eq.values[mask.values] - beta_ew.values[mask.values])
+        diff = beta_eq.values[mask.values] - beta_ew.values[mask.values]
         assert np.abs(diff).mean() > 1e-3
 
     def test_ewma_none_unchanged_vs_baseline(self):
@@ -517,12 +509,8 @@ class TestRollingOLSEWMA:
             factors, assets, controls=controls
         )
         for fac in ["f1", "f2"]:
-            pd.testing.assert_frame_equal(
-                baseline.get_beta(fac), explicit.get_beta(fac)
-            )
-            pd.testing.assert_frame_equal(
-                baseline.get_r2(fac), explicit.get_r2(fac)
-            )
+            pd.testing.assert_frame_equal(baseline.get_beta(fac), explicit.get_beta(fac))
+            pd.testing.assert_frame_equal(baseline.get_r2(fac), explicit.get_r2(fac))
 
     def test_ewma_beta_shape_and_index(self):
         """EWMA betas have correct shape, columns, and index."""
@@ -547,16 +535,16 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        result = RollingOLS(
-            window=window, ewma_halflife=hl, dtype="float64"
-        ).fit_transform(factors, assets)
+        result = RollingOLS(window=window, ewma_halflife=hl, dtype="float64").fit_transform(
+            factors, assets
+        )
         beta = result.get_beta("f1")["a1"]
 
         # Manual weighted slope for the final window.
         t = T - 1
         w = _ewma_weights(hl, window)
-        f_w = factors["f1"].to_numpy()[t - window + 1: t + 1]
-        a_w = assets["a1"].to_numpy()[t - window + 1: t + 1]
+        f_w = factors["f1"].to_numpy()[t - window + 1 : t + 1]
+        a_w = assets["a1"].to_numpy()[t - window + 1 : t + 1]
         fbar = (w * f_w).sum()
         abar = (w * a_w).sum()
         cov = (w * (f_w - fbar) * (a_w - abar)).sum()

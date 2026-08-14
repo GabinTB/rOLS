@@ -38,6 +38,7 @@ def _warn_singular(n: int) -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_windows(arr: np.ndarray, window: int) -> np.ndarray:
     """
     Zero-copy sliding window view: (T, d) -> (T - window + 1, window, d).
@@ -45,7 +46,7 @@ def _make_windows(arr: np.ndarray, window: int) -> np.ndarray:
     """
     T, d = arr.shape
     n = T - window + 1
-    shape   = (n, window, d)
+    shape = (n, window, d)
     strides = (arr.strides[0], arr.strides[0], arr.strides[1])
     return as_strided(arr, shape=shape, strides=strides)
 
@@ -153,14 +154,14 @@ def _residualize_single(
         for t in range(min_periods - 1, window - 1):
             if np.isnan(y_col[t]):
                 continue
-            y_w = y_col[:t + 1]
-            row_ok = x_row_valid[:t + 1] & ~np.isnan(y_w)
+            y_w = y_col[: t + 1]
+            row_ok = x_row_valid[: t + 1] & ~np.isnan(y_w)
             if row_ok.sum() < min_periods:
                 continue
-            Xw_c = X_np[:t + 1][row_ok]
+            Xw_c = X_np[: t + 1][row_ok]
             yw_c = y_w[row_ok]
             if weights is not None:
-                w_c = weights[-(t + 1):][row_ok]
+                w_c = weights[-(t + 1) :][row_ok]
                 w_c = w_c / w_c.sum()
                 XtX = Xw_c.T @ (Xw_c * w_c[:, None]) + ridge_term
                 rhs = Xw_c.T @ (yw_c * w_c)
@@ -179,6 +180,7 @@ def _residualize_single(
 # ---------------------------------------------------------------------------
 # Rolling OLS / Ridge residualization
 # ---------------------------------------------------------------------------
+
 
 def rolling_residualize(
     y: pd.DataFrame,
@@ -256,7 +258,7 @@ def rolling_residualize(
     y_np = y.to_numpy(dtype=np.float64)
     X_np = X.to_numpy(dtype=np.float64)
     T, N = y_np.shape
-    k    = X_np.shape[1]
+    k = X_np.shape[1]
     resid = np.full((T, N), np.nan)
     ridge_term = ridge_lambda * np.eye(k)
     n_singular = 0
@@ -266,9 +268,9 @@ def rolling_residualize(
         # Per-column NaN handling: drop rows with NaN in X or y_j
         x_row_valid = ~np.isnan(X_np).any(axis=1)  # (T,)
         for t in range(min_periods - 1, T):
-            X_end = X_np[:t + 1]
-            y_end = y_np[:t + 1]
-            x_ok  = x_row_valid[:t + 1]
+            X_end = X_np[: t + 1]
+            y_end = y_np[: t + 1]
+            x_ok = x_row_valid[: t + 1]
 
             for j in range(N):
                 if np.isnan(y_np[t, j]):
@@ -278,7 +280,7 @@ def rolling_residualize(
                     continue
                 Xw_c = X_end[row_ok]
                 yw_c = y_end[row_ok, j]
-                XtX  = Xw_c.T @ Xw_c + ridge_term
+                XtX = Xw_c.T @ Xw_c + ridge_term
                 try:
                     beta_t = np.linalg.solve(XtX, Xw_c.T @ yw_c)
                     resid[t, j] = y_np[t, j] - X_np[t] @ beta_t
@@ -296,17 +298,17 @@ def rolling_residualize(
 
         # X-only NaN check (y is clean by construction here)
         has_nan_X = np.isnan(Xw).any(axis=(1, 2))
-        valid     = ~has_nan_X
+        valid = ~has_nan_X
 
         if weights is not None:
             # Weighted gram matrix: X'WX and X'Wy. Apply weights to one side
             # of the einsum so the accumulation sums w_t * x_t * (.)_t.
-            Xw_w = Xw * weights[None, :, None]   # (n, window, k)
-            XtX  = np.einsum('twi,twj->tij', Xw_w, Xw)
-            XtY  = np.einsum('twi,twn->tin', Xw_w, yw)
+            Xw_w = Xw * weights[None, :, None]  # (n, window, k)
+            XtX = np.einsum("twi,twj->tij", Xw_w, Xw)
+            XtY = np.einsum("twi,twn->tin", Xw_w, yw)
         else:
-            XtX = np.einsum('twi,twj->tij', Xw, Xw)
-            XtY = np.einsum('twi,twn->tin', Xw, yw)
+            XtX = np.einsum("twi,twj->tij", Xw, Xw)
+            XtY = np.einsum("twi,twn->tin", Xw, yw)
         XtX[valid] += ridge_term
 
         betas = np.full((n_windows, k, N), np.nan)
@@ -314,17 +316,17 @@ def rolling_residualize(
             # _solve_batch emits its own aggregated warning for the batch.
             betas[valid] = _solve_batch(XtX[valid], XtY[valid], warn_singular=warn_singular)
 
-        t_idx  = np.arange(n_windows) + window - 1
-        fitted = np.einsum('ti,tin->tn', X_np[t_idx], betas)
+        t_idx = np.arange(n_windows) + window - 1
+        fitted = np.einsum("ti,tin->tn", X_np[t_idx], betas)
         resid[t_idx] = np.where(has_nan_X[:, None], np.nan, y_np[t_idx] - fitted)
 
         if min_periods < window:
             for t in range(min_periods - 1, window - 1):
-                Xw_t, yw_t = X_np[:t + 1], y_np[:t + 1]
+                Xw_t, yw_t = X_np[: t + 1], y_np[: t + 1]
                 if np.isnan(Xw_t).any():
                     continue
                 if weights is not None:
-                    w_t = weights[-(t + 1):]
+                    w_t = weights[-(t + 1) :]
                     w_t = w_t / w_t.sum()
                     XtX_t = Xw_t.T @ (Xw_t * w_t[:, None]) + ridge_term
                     rhs_t = Xw_t.T @ (yw_t * w_t[:, None])
@@ -355,34 +357,34 @@ def rolling_residualize(
         t_idx = np.arange(n_windows) + window - 1
 
         for j in range(N):
-            yw_j        = yw[:, :, j]            # (n_windows, window)
-            valid_j     = ~np.isnan(yw_j)        # (n_windows, window)
-            valid_count = valid_j.sum(axis=1)    # (n_windows,)
+            yw_j = yw[:, :, j]  # (n_windows, window)
+            valid_j = ~np.isnan(yw_j)  # (n_windows, window)
+            valid_count = valid_j.sum(axis=1)  # (n_windows,)
             # The prediction point is the last row of each window; if y_j is
             # NaN there the window is skipped (matching _residualize_single).
-            pred_valid  = valid_j[:, -1]
-            sufficient  = (valid_count >= min_periods) & pred_valid
+            pred_valid = valid_j[:, -1]
+            sufficient = (valid_count >= min_periods) & pred_valid
             if not sufficient.any():
                 continue
 
             # Zero out the X (and y) rows where y_j is NaN so they drop out of
             # both X'X and X'y for this asset.
-            Xw_masked = np.where(valid_j[:, :, None], Xw, 0.0)   # (n_windows, window, k)
-            yw_masked = np.where(valid_j, yw_j, 0.0)             # (n_windows, window)
+            Xw_masked = np.where(valid_j[:, :, None], Xw, 0.0)  # (n_windows, window, k)
+            yw_masked = np.where(valid_j, yw_j, 0.0)  # (n_windows, window)
 
             if weights is not None:
                 # Per-window weights restricted to the surviving (non-NaN) rows,
                 # renormalized to sum to 1. Insufficient windows have zero sum
                 # but are filtered out by `sufficient`, so the divide is guarded.
-                wm    = np.where(valid_j, weights[None, :], 0.0)       # (n_windows, window)
-                wsum  = wm.sum(axis=1, keepdims=True)                  # (n_windows, 1)
-                wn    = np.divide(wm, wsum, out=np.zeros_like(wm), where=wsum > 0)
-                Xw_w  = Xw_masked * wn[:, :, None]                    # (n_windows, window, k)
-                XtX_j = np.einsum('twi,twj->tij', Xw_w, Xw_masked)    # (n_windows, k, k)
-                XtY_j = np.einsum('twi,tw->ti', Xw_w, yw_masked)[:, :, None]
+                wm = np.where(valid_j, weights[None, :], 0.0)  # (n_windows, window)
+                wsum = wm.sum(axis=1, keepdims=True)  # (n_windows, 1)
+                wn = np.divide(wm, wsum, out=np.zeros_like(wm), where=wsum > 0)
+                Xw_w = Xw_masked * wn[:, :, None]  # (n_windows, window, k)
+                XtX_j = np.einsum("twi,twj->tij", Xw_w, Xw_masked)  # (n_windows, k, k)
+                XtY_j = np.einsum("twi,tw->ti", Xw_w, yw_masked)[:, :, None]
             else:
-                XtX_j = np.einsum('twi,twj->tij', Xw_masked, Xw_masked)  # (n_windows, k, k)
-                XtY_j = np.einsum('twi,tw->ti', Xw_masked, yw_masked)[:, :, None]
+                XtX_j = np.einsum("twi,twj->tij", Xw_masked, Xw_masked)  # (n_windows, k, k)
+                XtY_j = np.einsum("twi,tw->ti", Xw_masked, yw_masked)[:, :, None]
             XtX_j[sufficient] += ridge_term
 
             betas_j = np.full((n_windows, k, 1), np.nan)
@@ -391,11 +393,9 @@ def rolling_residualize(
             betas_j[sufficient] = _solve_batch(
                 XtX_j[sufficient], XtY_j[sufficient], warn_singular=False
             )
-            n_singular += int(
-                (sufficient & np.isnan(betas_j[:, :, 0]).any(axis=1)).sum()
-            )
+            n_singular += int((sufficient & np.isnan(betas_j[:, :, 0]).any(axis=1)).sum())
 
-            fitted = np.einsum('ti,ti->t', X_np[t_idx], betas_j[:, :, 0])
+            fitted = np.einsum("ti,ti->t", X_np[t_idx], betas_j[:, :, 0])
             resid[t_idx, j] = np.where(sufficient, y_np[t_idx, j] - fitted, np.nan)
 
         # Early windows (min_periods < window) use variable-size expanding
@@ -405,14 +405,14 @@ def rolling_residualize(
                 for j in range(N):
                     if np.isnan(y_np[t, j]):
                         continue
-                    y_w    = y_np[:t + 1, j]
+                    y_w = y_np[: t + 1, j]
                     row_ok = ~np.isnan(y_w)
                     if row_ok.sum() < min_periods:
                         continue
-                    Xw_c  = X_np[:t + 1][row_ok]
-                    yw_c  = y_w[row_ok]
+                    Xw_c = X_np[: t + 1][row_ok]
+                    yw_c = y_w[row_ok]
                     if weights is not None:
-                        w_c = weights[-(t + 1):][row_ok]
+                        w_c = weights[-(t + 1) :][row_ok]
                         w_c = w_c / w_c.sum()
                         XtX_t = Xw_c.T @ (Xw_c * w_c[:, None]) + ridge_term
                         rhs_t = Xw_c.T @ (yw_c * w_c)
@@ -454,6 +454,7 @@ def rolling_residualize(
 # Rolling Gram-Schmidt orthogonalization
 # ---------------------------------------------------------------------------
 
+
 def rolling_gram_schmidt(
     X: pd.DataFrame,
     window: int,
@@ -491,8 +492,8 @@ def rolling_gram_schmidt(
     result = X.astype(np.float64).copy()
 
     for j in range(1, len(cols)):
-        y_col  = result[[cols[j]]]
-        Xprev  = result[cols[:j]]
+        y_col = result[[cols[j]]]
+        Xprev = result[cols[:j]]
 
         resid = rolling_residualize(
             y=y_col,
@@ -511,6 +512,7 @@ def rolling_gram_schmidt(
 # ---------------------------------------------------------------------------
 # HAC (Newey-West) standard errors
 # ---------------------------------------------------------------------------
+
 
 def hac_se(
     residuals: pd.DataFrame,
@@ -551,20 +553,20 @@ def hac_se(
     pd.DataFrame of standard errors, same shape as residuals
     """
     resid_np = residuals.to_numpy(dtype=np.float64)
-    f_np     = factor_values.to_numpy(dtype=np.float64)
-    T, N     = resid_np.shape
-    se       = np.full((T, N), np.nan)
+    f_np = factor_values.to_numpy(dtype=np.float64)
+    T, N = resid_np.shape
+    se = np.full((T, N), np.nan)
 
     def _nw_se_window(f_w: np.ndarray, e_w: np.ndarray) -> np.ndarray:
         n_obs = len(f_w)
         score = f_w[:, None] * e_w
-        xx    = f_w @ f_w
-        S     = np.einsum('ti,ti->i', score, score) / n_obs
+        xx = f_w @ f_w
+        S = np.einsum("ti,ti->i", score, score) / n_obs
         for lag in range(1, n_lags + 1):
-            w     = 1.0 - lag / (n_lags + 1)
-            gamma = np.einsum('ti,ti->i', score[lag:], score[:-lag]) / n_obs
-            S    += 2 * w * gamma
-        var_beta = S * n_obs / (xx ** 2)
+            w = 1.0 - lag / (n_lags + 1)
+            gamma = np.einsum("ti,ti->i", score[lag:], score[:-lag]) / n_obs
+            S += 2 * w * gamma
+        var_beta = S * n_obs / (xx**2)
         return np.sqrt(np.maximum(var_beta, 0.0))
 
     def _fill_window(t: int, f_w: np.ndarray, e_w: np.ndarray) -> None:
@@ -584,7 +586,7 @@ def hac_se(
     if expanding:
         # Expanding window — loop required (variable window size per t).
         for t in range(min_periods - 1, T):
-            _fill_window(t, f_np[:t + 1], resid_np[:t + 1])
+            _fill_window(t, f_np[: t + 1], resid_np[: t + 1])
     else:
         # Rolling window — fully vectorized over T via stride tricks. The
         # Python loop is O(n_lags) (typically 3-10), with T collapsed into the
@@ -595,38 +597,41 @@ def hac_se(
         n_windows = T - window + 1
         if n_windows > 0 and window > n_lags:
             # (n_windows, window) and (n_windows, window, N) zero-copy views.
-            f_wins     = _make_windows(f_np[:, None], window)[:, :, 0]
+            f_wins = _make_windows(f_np[:, None], window)[:, :, 0]
             resid_wins = _make_windows(resid_np, window)
-            score_wins = f_wins[:, :, None] * resid_wins   # (n_windows, window, N)
+            score_wins = f_wins[:, :, None] * resid_wins  # (n_windows, window, N)
 
-            xx = (f_wins ** 2).sum(axis=1)                 # (n_windows,) — X'X per window
+            xx = (f_wins**2).sum(axis=1)  # (n_windows,) — X'X per window
 
             # Gamma(0) plus Bartlett-weighted lags, summed over the window axis.
-            S = np.einsum('twn,twn->tn', score_wins, score_wins) / window
+            S = np.einsum("twn,twn->tn", score_wins, score_wins) / window
             for lag in range(1, n_lags + 1):
-                w     = 1.0 - lag / (n_lags + 1)
-                gamma = np.einsum(
-                    'twn,twn->tn',
-                    score_wins[:, lag:, :],
-                    score_wins[:, :window - lag, :],
-                ) / window
+                w = 1.0 - lag / (n_lags + 1)
+                gamma = (
+                    np.einsum(
+                        "twn,twn->tn",
+                        score_wins[:, lag:, :],
+                        score_wins[:, : window - lag, :],
+                    )
+                    / window
+                )
                 S += 2 * w * gamma
 
             # Sandwich: Var(beta) = (X'X)^{-1} S (X'X)^{-1}, with S scaled by n_obs.
             var_beta = S * window / (xx[:, None] ** 2)
-            se_vals  = np.sqrt(np.maximum(var_beta, 0.0))   # (n_windows, N)
+            se_vals = np.sqrt(np.maximum(var_beta, 0.0))  # (n_windows, N)
 
             # NaN masking (consistent with issue #8 / _fill_window):
             #   factor NaN  -> invalidate the whole window for every asset;
             #   residual NaN -> invalidate only the affected asset column.
-            f_has_nan     = np.isnan(f_wins).any(axis=1)             # (n_windows,)
+            f_has_nan = np.isnan(f_wins).any(axis=1)  # (n_windows,)
             asset_has_nan = f_has_nan[:, None] | np.isnan(resid_wins).any(axis=1)
-            t_idx         = np.arange(n_windows) + window - 1
-            se[t_idx]     = np.where(asset_has_nan, np.nan, se_vals)
+            t_idx = np.arange(n_windows) + window - 1
+            se[t_idx] = np.where(asset_has_nan, np.nan, se_vals)
 
         if min_periods < window:
             # Early windows have variable size (< window) — keep the loop.
             for t in range(min_periods - 1, window - 1):
-                _fill_window(t, f_np[:t + 1], resid_np[:t + 1])
+                _fill_window(t, f_np[: t + 1], resid_np[: t + 1])
 
     return pd.DataFrame(se, index=residuals.index, columns=residuals.columns)

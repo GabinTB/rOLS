@@ -1,17 +1,17 @@
 """Tests for low-level rolling estimators."""
 
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from unittest.mock import patch
-
 import rols.estimators as est
 from rols.estimators import (
-    rolling_residualize,
-    rolling_gram_schmidt,
-    hac_se,
     _solve_batch,
+    hac_se,
+    rolling_gram_schmidt,
+    rolling_residualize,
 )
 from rols.model import _ewma_weights
 
@@ -50,7 +50,7 @@ class TestRollingResidualize:
         # First few values should be NaN (before min_periods)
         assert result.iloc[:4].isna().all().all()
         # After min_periods, should have values
-        assert result.iloc[min_periods - 1:].notna().any().any()
+        assert result.iloc[min_periods - 1 :].notna().any().any()
 
     def test_ridge_regression(self):
         """Test Ridge regularization."""
@@ -187,8 +187,12 @@ class TestRollingResidualize:
             y=y64, X=X64, window=20, min_periods=20, expanding=False, ridge_lambda=0.0
         )
         result32 = rolling_residualize(
-            y=y64.astype(np.float32), X=X64.astype(np.float32),
-            window=20, min_periods=20, expanding=False, ridge_lambda=0.0
+            y=y64.astype(np.float32),
+            X=X64.astype(np.float32),
+            window=20,
+            min_periods=20,
+            expanding=False,
+            ridge_lambda=0.0,
         )
 
         # Compare where both are defined — within float32 tolerance.
@@ -280,9 +284,7 @@ class TestVectorizedNaNRobustPath:
         y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
         with patch.object(est, "_residualize_single", wraps=est._residualize_single) as m:
-            rolling_residualize(
-                y=y, X=X, window=15, min_periods=15, expanding=False
-            )
+            rolling_residualize(y=y, X=X, window=15, min_periods=15, expanding=False)
         assert m.call_count == 0
 
     def test_intermediate_path_used_when_nans_only_in_y(self):
@@ -293,9 +295,7 @@ class TestVectorizedNaNRobustPath:
         y.iloc[10:14, 1] = np.nan
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
         with patch.object(est, "_residualize_single", wraps=est._residualize_single) as m:
-            rolling_residualize(
-                y=y, X=X, window=15, min_periods=15, expanding=False
-            )
+            rolling_residualize(y=y, X=X, window=15, min_periods=15, expanding=False)
         assert m.call_count == 0
 
     def test_fallback_used_when_nans_in_X(self):
@@ -306,9 +306,7 @@ class TestVectorizedNaNRobustPath:
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
         X.iloc[10:14, 0] = np.nan
         with patch.object(est, "_residualize_single", wraps=est._residualize_single) as m:
-            rolling_residualize(
-                y=y, X=X, window=15, min_periods=15, expanding=False
-            )
+            rolling_residualize(y=y, X=X, window=15, min_periods=15, expanding=False)
         assert m.call_count == N
 
     def test_nan_isolated_per_asset(self):
@@ -318,9 +316,7 @@ class TestVectorizedNaNRobustPath:
         y = pd.DataFrame(np.random.randn(T, N), columns=[f"y{i}" for i in range(N)])
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
 
-        clean = rolling_residualize(
-            y=y, X=X, window=20, min_periods=20, expanding=False
-        )
+        clean = rolling_residualize(y=y, X=X, window=20, min_periods=20, expanding=False)
         contaminated = y.copy()
         contaminated.iloc[50, 1] = np.nan
         contam = rolling_residualize(
@@ -338,9 +334,7 @@ class TestVectorizedNaNRobustPath:
         y = pd.DataFrame(np.random.randn(T, N), columns=["y0", "y1"])
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
         y.iloc[40, 0] = np.nan
-        result = rolling_residualize(
-            y=y, X=X, window=20, min_periods=20, expanding=False
-        )
+        result = rolling_residualize(y=y, X=X, window=20, min_periods=20, expanding=False)
         # The prediction point itself is NaN.
         assert np.isnan(result.iloc[40, 0])
         # A window ending before the NaN row (t=39, rows [20:40)) is unaffected.
@@ -380,15 +374,11 @@ class TestWeightedResidualize:
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
         w = _ewma_weights(halflife=5, window=20)
 
-        unweighted = rolling_residualize(
-            y=y, X=X, window=20, min_periods=20, expanding=False
-        )
+        unweighted = rolling_residualize(y=y, X=X, window=20, min_periods=20, expanding=False)
         weighted = rolling_residualize(
             y=y, X=X, window=20, min_periods=20, expanding=False, weights=w
         )
-        assert not np.allclose(
-            unweighted.to_numpy(), weighted.to_numpy(), equal_nan=True
-        )
+        assert not np.allclose(unweighted.to_numpy(), weighted.to_numpy(), equal_nan=True)
 
     def test_weights_none_matches_baseline(self):
         """weights=None is bit-for-bit identical to omitting the argument."""
@@ -397,9 +387,7 @@ class TestWeightedResidualize:
         y = pd.DataFrame(np.random.randn(T, 3), columns=["y1", "y2", "y3"])
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
 
-        baseline = rolling_residualize(
-            y=y, X=X, window=15, min_periods=15, expanding=False
-        )
+        baseline = rolling_residualize(y=y, X=X, window=15, min_periods=15, expanding=False)
         explicit_none = rolling_residualize(
             y=y, X=X, window=15, min_periods=15, expanding=False, weights=None
         )
@@ -497,9 +485,7 @@ class TestWeightedResidualize:
         X = pd.DataFrame(np.random.randn(T, 1), columns=["x"])
         w = _ewma_weights(halflife=5, window=20)
         with pytest.raises(ValueError, match="expanding"):
-            rolling_residualize(
-                y=y, X=X, window=20, min_periods=20, expanding=True, weights=w
-            )
+            rolling_residualize(y=y, X=X, window=20, min_periods=20, expanding=True, weights=w)
 
 
 class TestRollingGramSchmidt:
@@ -511,9 +497,7 @@ class TestRollingGramSchmidt:
         T = 100
         X = pd.DataFrame(np.random.randn(T, 3), columns=["x1", "x2", "x3"])
 
-        result = rolling_gram_schmidt(
-            X=X, window=20, min_periods=20, expanding=False
-        )
+        result = rolling_gram_schmidt(X=X, window=20, min_periods=20, expanding=False)
 
         assert result.shape == X.shape
         assert list(result.columns) == list(X.columns)
@@ -524,9 +508,7 @@ class TestRollingGramSchmidt:
         T = 100
         X = pd.DataFrame(np.random.randn(T, 1), columns=["x1"])
 
-        result = rolling_gram_schmidt(
-            X=X, window=20, min_periods=20, expanding=False
-        )
+        result = rolling_gram_schmidt(X=X, window=20, min_periods=20, expanding=False)
 
         # First column should remain unchanged
         pd.testing.assert_frame_equal(result, X)
@@ -537,9 +519,7 @@ class TestRollingGramSchmidt:
         T = 50
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
 
-        result = rolling_gram_schmidt(
-            X=X, window=10, min_periods=5, expanding=True
-        )
+        result = rolling_gram_schmidt(X=X, window=10, min_periods=5, expanding=True)
 
         assert result.shape == X.shape
 
@@ -549,9 +529,7 @@ class TestRollingGramSchmidt:
         T = 100
         X = pd.DataFrame(np.random.randn(T, 5), columns=[f"x{i}" for i in range(5)])
 
-        result = rolling_gram_schmidt(
-            X=X, window=20, min_periods=20, expanding=False
-        )
+        result = rolling_gram_schmidt(X=X, window=20, min_periods=20, expanding=False)
 
         assert result.shape == X.shape
         assert list(result.columns) == list(X.columns)
@@ -565,9 +543,7 @@ class TestRollingGramSchmidt:
         x2 = x1 + 0.1 * np.random.randn(T)
         X = pd.DataFrame({"x1": x1, "x2": x2})
 
-        result = rolling_gram_schmidt(
-            X=X, window=20, min_periods=20, expanding=False
-        )
+        result = rolling_gram_schmidt(X=X, window=20, min_periods=20, expanding=False)
 
         # First column should be unchanged
         pd.testing.assert_series_equal(result["x1"], X["x1"], check_dtype=False)
@@ -687,8 +663,12 @@ class TestHACSE:
         factor = pd.Series(np.random.randn(T), name="factor")
 
         se_clean = hac_se(
-            residuals=clean, factor_values=factor,
-            window=20, min_periods=20, expanding=False, n_lags=3,
+            residuals=clean,
+            factor_values=factor,
+            window=20,
+            min_periods=20,
+            expanding=False,
+            n_lags=3,
         )
 
         # Introduce a NaN into a2 only, inside one window's reach.
@@ -696,8 +676,12 @@ class TestHACSE:
         contaminated.iloc[50, contaminated.columns.get_loc("a2")] = np.nan
 
         se_contam = hac_se(
-            residuals=contaminated, factor_values=factor,
-            window=20, min_periods=20, expanding=False, n_lags=3,
+            residuals=contaminated,
+            factor_values=factor,
+            window=20,
+            min_periods=20,
+            expanding=False,
+            n_lags=3,
         )
 
         # a1 and a3 SEs are identical to the all-clean run — no contamination.
@@ -720,8 +704,12 @@ class TestHACSE:
         factor.iloc[50] = np.nan
 
         se = hac_se(
-            residuals=residuals, factor_values=factor,
-            window=20, min_periods=20, expanding=False, n_lags=3,
+            residuals=residuals,
+            factor_values=factor,
+            window=20,
+            min_periods=20,
+            expanding=False,
+            n_lags=3,
         )
 
         # Every window spanning t=50 (i.e. t in [50, 69]) is fully NaN.
@@ -741,23 +729,27 @@ class TestHACSE:
         factor = pd.Series(f, name="factor")
 
         se = hac_se(
-            residuals=residuals, factor_values=factor,
-            window=window, min_periods=window, expanding=False, n_lags=n_lags,
+            residuals=residuals,
+            factor_values=factor,
+            window=window,
+            min_periods=window,
+            expanding=False,
+            n_lags=n_lags,
         )
 
         # Manual Newey-West for the window ending at the last timestep.
         t = T - 1
-        f_w = f[t - window + 1:t + 1]
-        e_w = e[t - window + 1:t + 1]
+        f_w = f[t - window + 1 : t + 1]
+        e_w = e[t - window + 1 : t + 1]
         n_obs = window
         score = f_w * e_w
         xx = f_w @ f_w
-        S = np.sum(score ** 2) / n_obs
+        S = np.sum(score**2) / n_obs
         for lag in range(1, n_lags + 1):
             w = 1.0 - lag / (n_lags + 1)
             gamma = np.sum(score[lag:] * score[:-lag]) / n_obs
             S += 2 * w * gamma
-        var_beta = S * n_obs / (xx ** 2)
+        var_beta = S * n_obs / (xx**2)
         expected = np.sqrt(max(var_beta, 0.0))
 
         assert se["a1"].iloc[t] == pytest.approx(expected, rel=1e-10)
@@ -766,20 +758,20 @@ class TestHACSE:
     def _loop_hac_se(residuals, factor_values, window, min_periods, n_lags):
         """Reference per-window loop implementation (the pre-vectorization path)."""
         resid_np = residuals.to_numpy(dtype=np.float64)
-        f_np     = factor_values.to_numpy(dtype=np.float64)
-        T, N     = resid_np.shape
-        se       = np.full((T, N), np.nan)
+        f_np = factor_values.to_numpy(dtype=np.float64)
+        T, N = resid_np.shape
+        se = np.full((T, N), np.nan)
 
         def _nw(f_w, e_w):
             n_obs = len(f_w)
             score = f_w[:, None] * e_w
-            xx    = f_w @ f_w
-            S     = np.einsum('ti,ti->i', score, score) / n_obs
+            xx = f_w @ f_w
+            S = np.einsum("ti,ti->i", score, score) / n_obs
             for lag in range(1, n_lags + 1):
-                w     = 1.0 - lag / (n_lags + 1)
-                gamma = np.einsum('ti,ti->i', score[lag:], score[:-lag]) / n_obs
-                S    += 2 * w * gamma
-            return np.sqrt(np.maximum(S * n_obs / (xx ** 2), 0.0))
+                w = 1.0 - lag / (n_lags + 1)
+                gamma = np.einsum("ti,ti->i", score[lag:], score[:-lag]) / n_obs
+                S += 2 * w * gamma
+            return np.sqrt(np.maximum(S * n_obs / (xx**2), 0.0))
 
         def _fill(t, f_w, e_w):
             if np.isnan(f_w).any() or len(f_w) <= n_lags:
@@ -792,43 +784,50 @@ class TestHACSE:
 
         for t in range(window - 1, T):
             start = t - window + 1
-            _fill(t, f_np[start:t + 1], resid_np[start:t + 1])
+            _fill(t, f_np[start : t + 1], resid_np[start : t + 1])
         if min_periods < window:
             for t in range(min_periods - 1, window - 1):
-                _fill(t, f_np[:t + 1], resid_np[:t + 1])
+                _fill(t, f_np[: t + 1], resid_np[: t + 1])
         return pd.DataFrame(se, index=residuals.index, columns=residuals.columns)
 
     def test_vectorized_matches_loop(self):
         """Vectorized rolling path is numerically identical to the loop path."""
         np.random.seed(123)
         T, N = 200, 5
-        residuals = pd.DataFrame(np.random.randn(T, N),
-                                 columns=[f"a{i}" for i in range(N)])
+        residuals = pd.DataFrame(np.random.randn(T, N), columns=[f"a{i}" for i in range(N)])
         factor = pd.Series(np.random.randn(T), name="factor")
 
         for window, n_lags in [(20, 3), (30, 5), (15, 1), (50, 8)]:
             got = hac_se(
-                residuals=residuals, factor_values=factor,
-                window=window, min_periods=window, expanding=False, n_lags=n_lags,
+                residuals=residuals,
+                factor_values=factor,
+                window=window,
+                min_periods=window,
+                expanding=False,
+                n_lags=n_lags,
             )
             ref = self._loop_hac_se(residuals, factor, window, window, n_lags)
-            assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True), \
+            assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True), (
                 f"mismatch for window={window}, n_lags={n_lags}"
+            )
 
     def test_vectorized_matches_loop_with_nans(self):
         """Vectorized path matches the loop when factor and residual NaNs are present."""
         np.random.seed(321)
         T, N = 150, 4
-        residuals = pd.DataFrame(np.random.randn(T, N),
-                                 columns=[f"a{i}" for i in range(N)])
-        residuals.iloc[40, 1] = np.nan      # per-asset residual NaN
+        residuals = pd.DataFrame(np.random.randn(T, N), columns=[f"a{i}" for i in range(N)])
+        residuals.iloc[40, 1] = np.nan  # per-asset residual NaN
         residuals.iloc[80:83, 2] = np.nan
         factor = pd.Series(np.random.randn(T), name="factor")
-        factor.iloc[100] = np.nan           # whole-window factor NaN
+        factor.iloc[100] = np.nan  # whole-window factor NaN
 
         got = hac_se(
-            residuals=residuals, factor_values=factor,
-            window=25, min_periods=25, expanding=False, n_lags=4,
+            residuals=residuals,
+            factor_values=factor,
+            window=25,
+            min_periods=25,
+            expanding=False,
+            n_lags=4,
         )
         ref = self._loop_hac_se(residuals, factor, 25, 25, 4)
         assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True)
@@ -837,13 +836,16 @@ class TestHACSE:
         """Early (min_periods < window) windows still match the loop path."""
         np.random.seed(7)
         T, N = 120, 3
-        residuals = pd.DataFrame(np.random.randn(T, N),
-                                 columns=[f"a{i}" for i in range(N)])
+        residuals = pd.DataFrame(np.random.randn(T, N), columns=[f"a{i}" for i in range(N)])
         factor = pd.Series(np.random.randn(T), name="factor")
 
         got = hac_se(
-            residuals=residuals, factor_values=factor,
-            window=30, min_periods=15, expanding=False, n_lags=3,
+            residuals=residuals,
+            factor_values=factor,
+            window=30,
+            min_periods=15,
+            expanding=False,
+            n_lags=3,
         )
         ref = self._loop_hac_se(residuals, factor, 30, 15, 3)
         assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True)
@@ -861,20 +863,24 @@ class TestHACSE:
         n_lags, min_periods = 3, 10
         ref = np.full((T, N), np.nan)
         for t in range(min_periods - 1, T):
-            f_w, e_w = f_np[:t + 1], resid_np[:t + 1]
+            f_w, e_w = f_np[: t + 1], resid_np[: t + 1]
             if np.isnan(f_w).any() or len(f_w) <= n_lags:
                 continue
             score = f_w[:, None] * e_w
             xx = f_w @ f_w
-            S = np.einsum('ti,ti->i', score, score) / len(f_w)
+            S = np.einsum("ti,ti->i", score, score) / len(f_w)
             for lag in range(1, n_lags + 1):
                 w = 1.0 - lag / (n_lags + 1)
-                S += 2 * w * np.einsum('ti,ti->i', score[lag:], score[:-lag]) / len(f_w)
-            ref[t] = np.sqrt(np.maximum(S * len(f_w) / (xx ** 2), 0.0))
+                S += 2 * w * np.einsum("ti,ti->i", score[lag:], score[:-lag]) / len(f_w)
+            ref[t] = np.sqrt(np.maximum(S * len(f_w) / (xx**2), 0.0))
 
         got = hac_se(
-            residuals=residuals, factor_values=factor,
-            window=40, min_periods=min_periods, expanding=True, n_lags=n_lags,
+            residuals=residuals,
+            factor_values=factor,
+            window=40,
+            min_periods=min_periods,
+            expanding=True,
+            n_lags=n_lags,
         )
         assert np.allclose(got.to_numpy(), ref, equal_nan=True)
 
@@ -976,8 +982,13 @@ class TestSingularWarnings:
         """warn_singular=False suppresses the warning."""
         y, X = self._singular_inputs()
         rolling_residualize(
-            y=y, X=X, window=20, min_periods=20, expanding=False,
-            ridge_lambda=0.0, warn_singular=False,
+            y=y,
+            X=X,
+            window=20,
+            min_periods=20,
+            expanding=False,
+            ridge_lambda=0.0,
+            warn_singular=False,
         )
         assert len(recwarn) == 0
 
@@ -987,9 +998,7 @@ class TestSingularWarnings:
         T = 60
         y = pd.DataFrame(np.random.randn(T, 2), columns=["y1", "y2"])
         X = pd.DataFrame(np.random.randn(T, 2), columns=["x1", "x2"])
-        rolling_residualize(
-            y=y, X=X, window=20, min_periods=20, expanding=False, ridge_lambda=0.0
-        )
+        rolling_residualize(y=y, X=X, window=20, min_periods=20, expanding=False, ridge_lambda=0.0)
         assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn)
 
     def test_singular_warning_expanding_path(self):

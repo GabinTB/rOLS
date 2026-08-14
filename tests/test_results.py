@@ -5,7 +5,6 @@ import pandas as pd
 import pytest
 
 from rols.model import RollingOLS
-from rols.results import RollingOLSResult
 
 
 class TestRollingOLSResultGetters:
@@ -372,9 +371,7 @@ class TestRollingOLSResultFactorAdjustedReturns:
         result = ols.fit_transform(factors, assets)
 
         far = result.get_factor_adjusted_returns()
-        pd.testing.assert_frame_equal(
-            far, assets.astype(far.dtypes.iloc[0]), check_dtype=False
-        )
+        pd.testing.assert_frame_equal(far, assets.astype(far.dtypes.iloc[0]), check_dtype=False)
 
     def test_differs_from_regression_residuals(self):
         """FWL step 2 (controls only) differs from get_residuals (step 3)."""
@@ -403,9 +400,7 @@ class TestRollingOLSResultControlBetas:
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
         ols = RollingOLS(window=20)
-        return ols.fit_transform(
-            factors, assets, controls=controls, return_control_betas=True
-        )
+        return ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
     def test_get_control_beta_shape(self, setup_with_control_betas):
         """get_control_beta returns shape (T, N_assets)."""
@@ -497,9 +492,7 @@ class TestRollingOLSResultFactorMimickingReturns:
         g = result.get_factor_mimicking_returns("f1")
         beta = result.get_beta("f1")
 
-        pd.testing.assert_series_equal(
-            g, beta.iloc[:, 0].rename("f1"), check_dtype=False
-        )
+        pd.testing.assert_series_equal(g, beta.iloc[:, 0].rename("f1"), check_dtype=False)
 
     def test_invalid_factor_raises(self, single_target_result):
         """Unknown factor raises KeyError."""

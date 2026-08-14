@@ -17,15 +17,9 @@ class TestIntegrationBasicWorkflow:
         dates = pd.date_range("2022-01-01", periods=T)
 
         factors = pd.DataFrame(
-            np.random.randn(T, 2),
-            index=dates,
-            columns=["narrative_1", "narrative_2"]
+            np.random.randn(T, 2), index=dates, columns=["narrative_1", "narrative_2"]
         )
-        assets = pd.DataFrame(
-            np.random.randn(T, 3),
-            index=dates,
-            columns=["AAPL", "MSFT", "GOOG"]
-        )
+        assets = pd.DataFrame(np.random.randn(T, 3), index=dates, columns=["AAPL", "MSFT", "GOOG"])
 
         ols = RollingOLS(window=60, min_periods=20)
         result = ols.fit_transform(factors, assets)
@@ -42,19 +36,11 @@ class TestIntegrationBasicWorkflow:
         dates = pd.date_range("2022-01-01", periods=T)
 
         factors = pd.DataFrame(
-            np.random.randn(T, 2),
-            index=dates,
-            columns=["narrative_1", "narrative_2"]
+            np.random.randn(T, 2), index=dates, columns=["narrative_1", "narrative_2"]
         )
-        controls = pd.DataFrame(
-            np.random.randn(T, 2),
-            index=dates,
-            columns=["Mkt-RF", "SMB"]
-        )
+        controls = pd.DataFrame(np.random.randn(T, 2), index=dates, columns=["Mkt-RF", "SMB"])
         assets = pd.DataFrame(
-            np.random.randn(T, 5),
-            index=dates,
-            columns=[f"stock_{i}" for i in range(5)]
+            np.random.randn(T, 5), index=dates, columns=[f"stock_{i}" for i in range(5)]
         )
 
         ols = RollingOLS(window=60)
@@ -68,16 +54,8 @@ class TestIntegrationBasicWorkflow:
         T = 252
         dates = pd.date_range("2022-01-01", periods=T)
 
-        factors = pd.DataFrame(
-            np.random.randn(T, 1),
-            index=dates,
-            columns=["factor_1"]
-        )
-        assets = pd.DataFrame(
-            np.random.randn(T, 2),
-            index=dates,
-            columns=["asset_1", "asset_2"]
-        )
+        factors = pd.DataFrame(np.random.randn(T, 1), index=dates, columns=["factor_1"])
+        assets = pd.DataFrame(np.random.randn(T, 2), index=dates, columns=["asset_1", "asset_2"])
 
         ols = RollingOLS(window=60, hac_lags=5)
         result = ols.fit_transform(factors, assets)
@@ -125,7 +103,8 @@ class TestIntegrationBasicWorkflow:
 
         ols = RollingOLS(window=20)
         result = ols.fit_transform(
-            factors, assets,
+            factors,
+            assets,
             controls=controls,
             orthogonalize_factors=True,
             orthogonalize_controls=True,
@@ -158,12 +137,9 @@ class TestIntegrationDataHandling:
 
         # Factors: some mean-reverting, some trending
         f1 = np.cumsum(np.random.randn(T) * 0.01)
-        f2 = np.sin(np.linspace(0, 4*np.pi, T)) + np.random.randn(T) * 0.1
+        f2 = np.sin(np.linspace(0, 4 * np.pi, T)) + np.random.randn(T) * 0.1
 
-        factors = pd.DataFrame(
-            {"momentum": f1, "sentiment": f2},
-            index=dates
-        )
+        factors = pd.DataFrame({"momentum": f1, "sentiment": f2}, index=dates)
 
         # Assets: correlated with factors
         assets = pd.DataFrame(
@@ -171,7 +147,7 @@ class TestIntegrationDataHandling:
                 "tech_stock": f1 * 0.5 + np.random.randn(T) * 0.5,
                 "financial_stock": f2 * 0.3 + np.random.randn(T) * 0.5,
             },
-            index=dates
+            index=dates,
         )
 
         ols = RollingOLS(window=60, min_periods=20, hac_lags=5)
@@ -298,9 +274,7 @@ class TestIntegrationStatisticalProperties:
 
         # With orthogonalization
         ols = RollingOLS(window=20)
-        result = ols.fit_transform(
-            factors, assets, orthogonalize_factors=True
-        )
+        result = ols.fit_transform(factors, assets, orthogonalize_factors=True)
 
         assert result.get_beta("f1").shape == (T, 2)
 

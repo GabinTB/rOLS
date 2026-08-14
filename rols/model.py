@@ -31,11 +31,10 @@ Set hac_lags on the constructor to enable this.
 
 from __future__ import annotations
 
-from typing import List, Optional
 import numpy as np
 import pandas as pd
 
-from .estimators import rolling_residualize, rolling_gram_schmidt, hac_se
+from .estimators import rolling_gram_schmidt, rolling_residualize
 from .results import RollingOLSResult
 
 
@@ -46,7 +45,11 @@ def _rolling_cov_series_df(
     min_periods: int,
     expanding: bool,
 ) -> pd.DataFrame:
-    base = df.expanding(min_periods=min_periods) if expanding else df.rolling(window, min_periods=min_periods)
+    base = (
+        df.expanding(min_periods=min_periods)
+        if expanding
+        else df.rolling(window, min_periods=min_periods)
+    )
     return base.cov(s)
 
 
@@ -56,7 +59,11 @@ def _rolling_var(
     min_periods: int,
     expanding: bool,
 ) -> pd.Series | pd.DataFrame:
-    base = x.expanding(min_periods=min_periods) if expanding else x.rolling(window, min_periods=min_periods)
+    base = (
+        x.expanding(min_periods=min_periods)
+        if expanding
+        else x.rolling(window, min_periods=min_periods)
+    )
     return base.var()
 
 
@@ -99,22 +106,22 @@ def _ewma_cov_series_df(
     for t in range(min_periods - 1, T):
         L = min(window, t + 1)
         sl = slice(t - L + 1, t + 1)
-        w_t = weights[-L:]                                  # (L,)
-        f_w = f_np[sl]                                      # (L,)
-        a_w = a_np[sl]                                      # (L, N)
+        w_t = weights[-L:]  # (L,)
+        f_w = f_np[sl]  # (L,)
+        a_w = a_np[sl]  # (L, N)
 
         valid = (~np.isnan(f_w))[:, None] & ~np.isnan(a_w)  # (L, N)
-        wm    = np.where(valid, w_t[:, None], 0.0)          # (L, N)
-        wsum  = wm.sum(axis=0)                              # (N,)
-        ok    = (valid.sum(axis=0) >= min_periods) & (wsum > 0)
+        wm = np.where(valid, w_t[:, None], 0.0)  # (L, N)
+        wsum = wm.sum(axis=0)  # (N,)
+        ok = (valid.sum(axis=0) >= min_periods) & (wsum > 0)
         if not ok.any():
             continue
-        wn   = wm / np.where(wsum > 0, wsum, 1.0)
+        wn = wm / np.where(wsum > 0, wsum, 1.0)
         fbar = (wn * np.where(valid, f_w[:, None], 0.0)).sum(axis=0)
         abar = (wn * np.where(valid, a_w, 0.0)).sum(axis=0)
-        fc   = np.where(valid, f_w[:, None] - fbar, 0.0)
-        ac   = np.where(valid, a_w - abar, 0.0)
-        cov  = (wn * fc * ac).sum(axis=0)
+        fc = np.where(valid, f_w[:, None] - fbar, 0.0)
+        ac = np.where(valid, a_w - abar, 0.0)
+        cov = (wn * fc * ac).sum(axis=0)
         out[t, ok] = cov[ok]
 
     return pd.DataFrame(out, index=assets.index, columns=assets.columns)
@@ -142,19 +149,19 @@ def _ewma_var(
     for t in range(min_periods - 1, T):
         L = min(window, t + 1)
         sl = slice(t - L + 1, t + 1)
-        w_t = weights[-L:]                          # (L,)
-        x_w = x_np[sl]                              # (L, M)
+        w_t = weights[-L:]  # (L,)
+        x_w = x_np[sl]  # (L, M)
 
         valid = ~np.isnan(x_w)
-        wm    = np.where(valid, w_t[:, None], 0.0)
-        wsum  = wm.sum(axis=0)
-        ok    = (valid.sum(axis=0) >= min_periods) & (wsum > 0)
+        wm = np.where(valid, w_t[:, None], 0.0)
+        wsum = wm.sum(axis=0)
+        ok = (valid.sum(axis=0) >= min_periods) & (wsum > 0)
         if not ok.any():
             continue
-        wn   = wm / np.where(wsum > 0, wsum, 1.0)
+        wn = wm / np.where(wsum > 0, wsum, 1.0)
         xbar = (wn * np.where(valid, x_w, 0.0)).sum(axis=0)
-        xc   = np.where(valid, x_w - xbar, 0.0)
-        var  = (wn * xc * xc).sum(axis=0)
+        xc = np.where(valid, x_w - xbar, 0.0)
+        var = (wn * xc * xc).sum(axis=0)
         out[t, ok] = var[ok]
 
     if is_series:
@@ -253,17 +260,17 @@ class RollingOLS:
     def __init__(
         self,
         window: int = 252,
-        min_periods: Optional[int] = None,
+        min_periods: int | None = None,
         expanding: bool = False,
         lambda_: float = 0.0,
         adj_r2: bool = False,
         lag_signal: bool = False,
-        hac_lags: Optional[int] = None,
+        hac_lags: int | None = None,
         denom_tol: float = 1e-12,
         dtype: str = "float32",
         asset_chunk_size: int = 100,
         warn_singular: bool = True,
-        ewma_halflife: Optional[int] = None,
+        ewma_halflife: int | None = None,
     ) -> None:
         if ewma_halflife is not None and expanding:
             raise ValueError(
@@ -272,27 +279,27 @@ class RollingOLS:
                 "be precomputed."
             )
 
-        self.window          = window
-        self.min_periods     = min_periods if min_periods is not None else window
-        self.expanding       = expanding
-        self.lambda_         = lambda_
-        self.ewma_halflife   = ewma_halflife
-        self.adj_r2          = adj_r2
-        self.lag_signal      = lag_signal
-        self.hac_lags        = hac_lags
-        self.denom_tol       = denom_tol
-        self.dtype           = dtype
+        self.window = window
+        self.min_periods = min_periods if min_periods is not None else window
+        self.expanding = expanding
+        self.lambda_ = lambda_
+        self.ewma_halflife = ewma_halflife
+        self.adj_r2 = adj_r2
+        self.lag_signal = lag_signal
+        self.hac_lags = hac_lags
+        self.denom_tol = denom_tol
+        self.dtype = dtype
         self.asset_chunk_size = asset_chunk_size
-        self.warn_singular   = warn_singular
+        self.warn_singular = warn_singular
 
-        self._is_fitted       = False
-        self._factor_cols:    List[str] = []
-        self._control_cols:   List[str] = []
-        self._factors_raw:    Optional[pd.DataFrame] = None  # original, for signal
-        self._factor_resids:  Optional[pd.DataFrame] = None  # after FWL step 1
-        self._controls_fitted: Optional[pd.DataFrame] = None
+        self._is_fitted = False
+        self._factor_cols: list[str] = []
+        self._control_cols: list[str] = []
+        self._factors_raw: pd.DataFrame | None = None  # original, for signal
+        self._factor_resids: pd.DataFrame | None = None  # after FWL step 1
+        self._controls_fitted: pd.DataFrame | None = None
 
-    def _weights(self) -> Optional[np.ndarray]:
+    def _weights(self) -> np.ndarray | None:
         """EWMA observation weights for one full window, or None for equal weights."""
         if self.ewma_halflife is None:
             return None
@@ -305,10 +312,10 @@ class RollingOLS:
     def fit(
         self,
         factors: pd.DataFrame,
-        controls: Optional[pd.DataFrame] = None,
+        controls: pd.DataFrame | None = None,
         orthogonalize_factors: bool = False,
         orthogonalize_controls: bool = False,
-    ) -> "RollingOLS":
+    ) -> RollingOLS:
         """
         Fit the model on the regressors side (Frisch-Waugh step 1).
 
@@ -364,7 +371,7 @@ class RollingOLS:
                     warn_singular=self.warn_singular,
                 ).astype(self.dtype)
 
-            self._control_cols    = controls.columns.tolist()
+            self._control_cols = controls.columns.tolist()
             self._controls_fitted = controls
 
             self._factor_resids = rolling_residualize(
@@ -378,9 +385,9 @@ class RollingOLS:
                 weights=self._weights(),
             )
         else:
-            self._control_cols    = []
+            self._control_cols = []
             self._controls_fitted = None
-            self._factor_resids   = factors
+            self._factor_resids = factors
 
         self._is_fitted = True
         return self
@@ -416,12 +423,12 @@ class RollingOLS:
             raise RuntimeError("Call fit() before transform().")
 
         asset_cols = assets.columns.tolist()
-        assets     = assets.astype(self.dtype)
+        assets = assets.astype(self.dtype)
 
         # Frisch-Waugh step 2: residualize assets against controls (chunked)
         if self._controls_fitted is not None:
             chunks = [
-                asset_cols[i: i + self.asset_chunk_size]
+                asset_cols[i : i + self.asset_chunk_size]
                 for i in range(0, len(asset_cols), self.asset_chunk_size)
             ]
             asset_resids = pd.concat(
@@ -473,11 +480,15 @@ class RollingOLS:
             f_resid = self._factor_resids[fac]
 
             if weights is not None:
-                cov_af = _ewma_cov_series_df(f_resid, asset_resids, weights, self.window, self.min_periods)
-                var_f  = _ewma_var(f_resid, weights, self.window, self.min_periods)
+                cov_af = _ewma_cov_series_df(
+                    f_resid, asset_resids, weights, self.window, self.min_periods
+                )
+                var_f = _ewma_var(f_resid, weights, self.window, self.min_periods)
             else:
-                cov_af = _rolling_cov_series_df(f_resid, asset_resids, self.window, self.min_periods, self.expanding)
-                var_f  = _rolling_var(f_resid, self.window, self.min_periods, self.expanding)
+                cov_af = _rolling_cov_series_df(
+                    f_resid, asset_resids, self.window, self.min_periods, self.expanding
+                )
+                var_f = _rolling_var(f_resid, self.window, self.min_periods, self.expanding)
             var_f_safe = var_f.where(var_f.abs() > self.denom_tol)
 
             # Beta
@@ -485,10 +496,12 @@ class RollingOLS:
 
             # Signal — always uses raw (non-orthogonalized) factor values
             f_orig = self._factors_raw[fac]
-            signal = beta.shift(1).mul(f_orig, axis=0) if self.lag_signal else beta.mul(f_orig, axis=0)
+            signal = (
+                beta.shift(1).mul(f_orig, axis=0) if self.lag_signal else beta.mul(f_orig, axis=0)
+            )
 
             # R²
-            r2 = (cov_af ** 2).div(var_f_safe.values[:, None] * var_y, axis=0)
+            r2 = (cov_af**2).div(var_f_safe.values[:, None] * var_y, axis=0)
             if self.adj_r2:
                 n_obs = (
                     asset_resids.expanding(min_periods=self.min_periods).count()
@@ -503,9 +516,9 @@ class RollingOLS:
             # Residuals — needed for HAC SE on demand
             reg_resids = asset_resids - beta.mul(f_resid, axis=0)
 
-            result._betas[fac]     = beta
-            result._signals[fac]   = signal
-            result._r2[fac]        = r2
+            result._betas[fac] = beta
+            result._signals[fac] = signal
+            result._r2[fac] = r2
             result._residuals[fac] = reg_resids
             result._factor_values[fac] = f_resid
 
@@ -542,11 +555,17 @@ class RollingOLS:
                     ctrl_j_resid = self._controls_fitted[ctrl]
 
                 if weights is not None:
-                    cov_ac = _ewma_cov_series_df(ctrl_j_resid, asset_resid_j, weights, self.window, self.min_periods)
-                    var_c  = _ewma_var(ctrl_j_resid, weights, self.window, self.min_periods)
+                    cov_ac = _ewma_cov_series_df(
+                        ctrl_j_resid, asset_resid_j, weights, self.window, self.min_periods
+                    )
+                    var_c = _ewma_var(ctrl_j_resid, weights, self.window, self.min_periods)
                 else:
-                    cov_ac = _rolling_cov_series_df(ctrl_j_resid, asset_resid_j, self.window, self.min_periods, self.expanding)
-                    var_c  = _rolling_var(ctrl_j_resid, self.window, self.min_periods, self.expanding)
+                    cov_ac = _rolling_cov_series_df(
+                        ctrl_j_resid, asset_resid_j, self.window, self.min_periods, self.expanding
+                    )
+                    var_c = _rolling_var(
+                        ctrl_j_resid, self.window, self.min_periods, self.expanding
+                    )
                 var_c_safe = var_c.where(var_c.abs() > self.denom_tol)
                 control_betas[ctrl] = cov_ac.div(var_c_safe, axis=0)
 
@@ -564,7 +583,7 @@ class RollingOLS:
         self,
         factors: pd.DataFrame,
         assets: pd.DataFrame,
-        controls: Optional[pd.DataFrame] = None,
+        controls: pd.DataFrame | None = None,
         orthogonalize_factors: bool = False,
         orthogonalize_controls: bool = False,
         return_control_betas: bool = False,
@@ -574,8 +593,6 @@ class RollingOLS:
 
         Parameters mirror fit() and transform() — see their docstrings.
         """
-        return (
-            self
-            .fit(factors, controls, orthogonalize_factors, orthogonalize_controls)
-            .transform(assets, return_control_betas=return_control_betas)
+        return self.fit(factors, controls, orthogonalize_factors, orthogonalize_controls).transform(
+            assets, return_control_betas=return_control_betas
         )

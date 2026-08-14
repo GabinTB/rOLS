@@ -12,7 +12,7 @@ HAC standard errors and t-stats are computed on demand.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+
 import pandas as pd
 
 from .estimators import hac_se
@@ -34,41 +34,40 @@ class RollingOLSResult:
     expanding    : expanding window flag (needed for on-demand HAC)
     hac_lags     : number of Newey-West lags; None means HAC unavailable
     """
-    factor_cols: List[str]
-    asset_cols:  List[str]
-    index:       pd.Index
-    lag_signal:  bool
-    window:      int
+
+    factor_cols: list[str]
+    asset_cols: list[str]
+    index: pd.Index
+    lag_signal: bool
+    window: int
     min_periods: int
-    expanding:   bool
-    hac_lags:    Optional[int]
+    expanding: bool
+    hac_lags: int | None
 
     # {factor -> DataFrame(T x N_assets)}
-    _betas:     Dict[str, pd.DataFrame] = field(default_factory=dict)
-    _signals:   Dict[str, pd.DataFrame] = field(default_factory=dict)
-    _r2:        Dict[str, pd.DataFrame] = field(default_factory=dict)
-    _residuals: Dict[str, pd.DataFrame] = field(default_factory=dict)
+    _betas: dict[str, pd.DataFrame] = field(default_factory=dict)
+    _signals: dict[str, pd.DataFrame] = field(default_factory=dict)
+    _r2: dict[str, pd.DataFrame] = field(default_factory=dict)
+    _residuals: dict[str, pd.DataFrame] = field(default_factory=dict)
 
     # {factor -> {control -> DataFrame(T x N_assets)}}
     # Control betas do not depend on the factor, so the inner dict is shared
     # across all factors. Populated only when transform(return_control_betas=True).
-    _control_betas: Dict[str, Dict[str, pd.DataFrame]] = field(default_factory=dict)
+    _control_betas: dict[str, dict[str, pd.DataFrame]] = field(default_factory=dict)
 
     # cache for HAC SE: {factor -> DataFrame(T x N_assets)}
-    _se_cache:  Dict[str, pd.DataFrame] = field(default_factory=dict)
+    _se_cache: dict[str, pd.DataFrame] = field(default_factory=dict)
 
     # raw factor values needed for HAC: {factor -> Series}
-    _factor_values: Dict[str, pd.Series] = field(default_factory=dict)
+    _factor_values: dict[str, pd.Series] = field(default_factory=dict)
 
     # asset returns residualized against controls (FWL step 2): DataFrame(T x N_assets)
-    _factor_adjusted_returns: Optional[pd.DataFrame] = field(default=None)
+    _factor_adjusted_returns: pd.DataFrame | None = field(default=None)
 
     # validate factor name and raise KeyError if not found
     def _check_factor(self, factor: str) -> None:
         if factor not in self.factor_cols:
-            raise KeyError(
-                f"Factor '{factor}' not found. Available: {self.factor_cols}"
-            )
+            raise KeyError(f"Factor '{factor}' not found. Available: {self.factor_cols}")
 
     # ------------------------------------------------------------------
     # Core getters
@@ -140,9 +139,7 @@ class RollingOLSResult:
             )
         if control not in self._control_betas[factor]:
             available = list(self._control_betas[factor].keys())
-            raise KeyError(
-                f"Control '{control}' not found. Available controls: {available}"
-            )
+            raise KeyError(f"Control '{control}' not found. Available controls: {available}")
         return self._control_betas[factor][control]
 
     # ------------------------------------------------------------------
@@ -246,16 +243,16 @@ class RollingOLSResult:
         (plus se, t_stat if include_se=True)
         """
         self._check_factor(factor)
-        beta   = self._betas[factor].stack()
+        beta = self._betas[factor].stack()
         signal = self._signals[factor].stack()
-        r2     = self._r2[factor].stack()
+        r2 = self._r2[factor].stack()
         out = pd.DataFrame({"beta": beta, "signal": signal, "r2": r2})
         out.index.names = ["date", "asset"]
 
         if include_se:
-            se     = self.get_se(factor).stack()
-            tstat  = self.get_tstat(factor).stack()
-            out["se"]     = se
+            se = self.get_se(factor).stack()
+            tstat = self.get_tstat(factor).stack()
+            out["se"] = se
             out["t_stat"] = tstat
 
         return out.reset_index()
