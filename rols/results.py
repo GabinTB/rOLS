@@ -46,9 +46,12 @@ class RollingOLSResult:
 
     # {factor -> DataFrame(T x N_assets)}
     _betas: dict[str, pd.DataFrame] = field(default_factory=dict)
+    _intercepts: dict[str, pd.DataFrame] = field(default_factory=dict)
     _signals: dict[str, pd.DataFrame] = field(default_factory=dict)
     _r2: dict[str, pd.DataFrame] = field(default_factory=dict)
     _residuals: dict[str, pd.DataFrame] = field(default_factory=dict)
+    _dof: dict[str, pd.DataFrame] = field(default_factory=dict)
+    _n_used: dict[str, pd.DataFrame] = field(default_factory=dict)
 
     # {factor -> {control -> DataFrame(T x N_assets)}}
     # Control betas do not depend on the factor, so the inner dict is shared
@@ -78,6 +81,11 @@ class RollingOLSResult:
         self._check_factor(factor)
         return self._betas[factor]
 
+    def get_intercept(self, factor: str) -> pd.DataFrame:
+        """Rolling intercept for the model containing ``factor``."""
+        self._check_factor(factor)
+        return self._intercepts[factor]
+
     def get_signal(self, factor: str) -> pd.DataFrame:
         """
         Factor signal: beta_t * factor_t, or beta_{t-1} * factor_t if lag_signal=True.
@@ -93,15 +101,21 @@ class RollingOLSResult:
 
     def get_residuals(self, factor: str) -> pd.DataFrame:
         """
-        Rolling regression residuals: y_resid_t - beta_t * f_resid_t.
+        Endpoint residuals from the full model containing ``factor``.
         Shape: (T, N_assets). Used internally for HAC.
-
-        This is the FWL step 3 output — asset returns with BOTH the controls and
-        the narrative `factor` removed. For asset returns with only the controls
-        removed (FWL step 2), use get_factor_adjusted_returns() instead.
         """
         self._check_factor(factor)
         return self._residuals[factor]
+
+    def get_dof(self, factor: str) -> pd.DataFrame:
+        """Residual degrees of freedom for the model containing ``factor``."""
+        self._check_factor(factor)
+        return self._dof[factor]
+
+    def get_n_used(self, factor: str) -> pd.DataFrame:
+        """Complete-case observation count for the model containing ``factor``."""
+        self._check_factor(factor)
+        return self._n_used[factor]
 
     def get_factor_adjusted_returns(self) -> pd.DataFrame:
         """

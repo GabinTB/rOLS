@@ -15,10 +15,24 @@ hac_se                : Newey-West HAC standard errors from residuals
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 from numpy.lib.stride_tricks import as_strided
+
+
+@dataclass(frozen=True)
+class JointFitResult:
+    """Outputs from one rolling joint model per endpoint and target."""
+
+    coef: np.ndarray
+    intercept: np.ndarray
+    resid_endpoint: np.ndarray
+    ssr: np.ndarray
+    sst: np.ndarray
+    n_used: np.ndarray
+    n_eff: np.ndarray
 
 
 def _warn_singular(n: int) -> None:
@@ -78,6 +92,236 @@ def _solve_batch(XtX: np.ndarray, XtY: np.ndarray, warn_singular: bool = True) -
     if warn_singular:
         _warn_singular(n_singular)
     return betas
+
+
+def _solve_joint_window(
+    target: np.ndarray,
+    design: np.ndarray,
+    fit_intercept: bool,
+    weights: np.ndarray | None,
+    penalty: np.ndarray,
+) -> tuple[np.ndarray, float, float, float, int, float] | None:
+    """Solve one complete-case window for one target."""
+    complete_case = np.isfinite(target) & np.isfinite(design).all(axis=1)
+    n_used = int(complete_case.sum())
+    if n_used == 0:
+        return None
+
+    complete_target = target[complete_case]
+    complete_design = design[complete_case]
+    if weights is None:
+        complete_weights = np.full(n_used, 1.0 / n_used)
+    else:
+        complete_weights = weights[complete_case]
+        weight_sum = complete_weights.sum()
+        if weight_sum <= 0:
+            return None
+        complete_weights = complete_weights / weight_sum
+
+    gram = complete_design.T @ (complete_weights[:, None] * complete_design) + penalty
+    rhs = complete_design.T @ (complete_weights * complete_target)
+    try:
+        parameters = np.linalg.solve(gram, rhs)
+    except np.linalg.LinAlgError:
+        return None
+    if not np.isfinite(parameters).all():
+        return None
+
+    residuals = complete_target - complete_design @ parameters
+    ssr = float(np.sum(complete_weights * residuals**2))
+    if fit_intercept:
+        target_mean = np.sum(complete_weights * complete_target)
+        sst = float(np.sum(complete_weights * (complete_target - target_mean) ** 2))
+    else:
+        sst = float(np.sum(complete_weights * complete_target**2))
+    endpoint_residual = np.nan
+    if complete_case[-1]:
+        endpoint_residual = float(target[-1] - design[-1] @ parameters)
+    n_eff = float(1.0 / np.sum(complete_weights**2))
+    return parameters, endpoint_residual, ssr, sst, n_used, n_eff
+
+
+def rolling_joint_solve(
+    y: pd.DataFrame,
+    X: pd.DataFrame,
+    window: int,
+    min_periods: int,
+    expanding: bool,
+    fit_intercept: bool = True,
+    penalty: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
+    warn_singular: bool = True,
+) -> JointFitResult:
+    """Fit one current-window joint model per endpoint and target.
+
+    ``X`` contains slopes only. When requested, the intercept is an explicit
+    design column. Every coefficient, endpoint residual, sum of squares, and
+    sample count comes from the same complete-case fit. Equal and supplied
+    observation weights are normalized to sum to one within each target's
+    complete-case sample.
+    """
+    assert y.index.equals(X.index), "y and X must have identical indexes"
+    if window <= 0 or min_periods <= 0:
+        raise ValueError("window and min_periods must be positive")
+    if not expanding and min_periods > window:
+        raise ValueError("min_periods cannot exceed window")
+    if weights is not None and expanding:
+        raise ValueError("weights are not supported with expanding=True")
+
+    target_values = y.to_numpy(dtype=np.float64)
+    regressor_values = X.to_numpy(dtype=np.float64)
+    n_observations, n_targets = target_values.shape
+    n_slopes = regressor_values.shape[1]
+    design = (
+        np.column_stack([np.ones(n_observations), regressor_values])
+        if fit_intercept
+        else regressor_values
+    )
+    n_parameters = design.shape[1]
+
+    if penalty is None:
+        penalty_matrix = np.zeros((n_parameters, n_parameters), dtype=np.float64)
+    else:
+        penalty_matrix = np.asarray(penalty, dtype=np.float64)
+        if penalty_matrix.shape != (n_parameters, n_parameters):
+            raise ValueError(f"penalty must have shape ({n_parameters}, {n_parameters})")
+        if not np.isfinite(penalty_matrix).all():
+            raise ValueError("penalty must be finite")
+        if fit_intercept and not np.allclose(penalty_matrix[0], 0.0):
+            raise ValueError("the intercept cannot be penalized")
+        if fit_intercept and not np.allclose(penalty_matrix[:, 0], 0.0):
+            raise ValueError("the intercept cannot be penalized")
+
+    supplied_weights = None
+    if weights is not None:
+        supplied_weights = np.asarray(weights, dtype=np.float64)
+        if supplied_weights.shape != (window,):
+            raise ValueError(f"weights must have shape ({window},)")
+        if not np.isfinite(supplied_weights).all() or (supplied_weights < 0).any():
+            raise ValueError("weights must be finite and non-negative")
+        if supplied_weights.sum() <= 0:
+            raise ValueError("weights must have positive sum")
+
+    coef = np.full((n_observations, n_slopes, n_targets), np.nan)
+    intercept = np.full((n_observations, n_targets), np.nan)
+    resid_endpoint = np.full((n_observations, n_targets), np.nan)
+    ssr = np.full((n_observations, n_targets), np.nan)
+    sst = np.full((n_observations, n_targets), np.nan)
+    n_used = np.full((n_observations, n_targets), np.nan)
+    n_eff = np.full((n_observations, n_targets), np.nan)
+
+    def store(
+        endpoint: int,
+        target_position: int,
+        solved: tuple[np.ndarray, float, float, float, int, float],
+    ) -> None:
+        parameters, residual, window_ssr, window_sst, window_n_used, window_n_eff = solved
+        if fit_intercept:
+            intercept[endpoint, target_position] = parameters[0]
+            coef[endpoint, :, target_position] = parameters[1:]
+        else:
+            intercept[endpoint, target_position] = 0.0
+            coef[endpoint, :, target_position] = parameters
+        resid_endpoint[endpoint, target_position] = residual
+        ssr[endpoint, target_position] = window_ssr
+        sst[endpoint, target_position] = window_sst
+        n_used[endpoint, target_position] = window_n_used
+        n_eff[endpoint, target_position] = window_n_eff
+
+    clean_rolling = (
+        not expanding
+        and np.isfinite(design).all()
+        and np.isfinite(target_values).all()
+        and n_observations >= window
+    )
+    n_singular = 0
+    if clean_rolling:
+        design_windows = _make_windows(design, window)
+        target_windows = _make_windows(target_values, window)
+        window_weights = (
+            np.full(window, 1.0 / window)
+            if supplied_weights is None
+            else supplied_weights / supplied_weights.sum()
+        )
+        weighted_design_windows = design_windows * window_weights[None, :, None]
+        gram = np.einsum("twi,twj->tij", weighted_design_windows, design_windows)
+        gram += penalty_matrix
+        rhs = np.einsum("twi,twn->tin", weighted_design_windows, target_windows)
+        parameters = _solve_batch(gram, rhs, warn_singular=warn_singular)
+        endpoints = np.arange(parameters.shape[0]) + window - 1
+        if fit_intercept:
+            intercept[endpoints] = parameters[:, 0, :]
+            coef[endpoints] = parameters[:, 1:, :]
+        else:
+            intercept[endpoints] = 0.0
+            coef[endpoints] = parameters
+        fitted_windows = np.einsum("twk,tkn->twn", design_windows, parameters)
+        residual_windows = target_windows - fitted_windows
+        resid_endpoint[endpoints] = residual_windows[:, -1, :]
+        ssr[endpoints] = np.einsum("w,twn->tn", window_weights, residual_windows**2)
+        if fit_intercept:
+            target_means = np.einsum("w,twn->tn", window_weights, target_windows)
+            centered_targets = target_windows - target_means[:, None, :]
+            sst[endpoints] = np.einsum("w,twn->tn", window_weights, centered_targets**2)
+        else:
+            sst[endpoints] = np.einsum("w,twn->tn", window_weights, target_windows**2)
+        n_used[endpoints] = window
+        n_eff[endpoints] = 1.0 / np.sum(window_weights**2)
+
+        early_stop = min(window - 1, n_observations)
+        for endpoint in range(min_periods - 1, early_stop):
+            endpoint_weights = (
+                None if supplied_weights is None else supplied_weights[-(endpoint + 1) :]
+            )
+            for target_position in range(n_targets):
+                solved = _solve_joint_window(
+                    target_values[: endpoint + 1, target_position],
+                    design[: endpoint + 1],
+                    fit_intercept,
+                    endpoint_weights,
+                    penalty_matrix,
+                )
+                if solved is None:
+                    n_singular += 1
+                else:
+                    store(endpoint, target_position, solved)
+    else:
+        for endpoint in range(min_periods - 1, n_observations):
+            start = 0 if expanding else max(0, endpoint - window + 1)
+            endpoint_weights = (
+                None if supplied_weights is None else supplied_weights[-(endpoint - start + 1) :]
+            )
+            for target_position in range(n_targets):
+                window_target = target_values[start : endpoint + 1, target_position]
+                window_design = design[start : endpoint + 1]
+                complete_count = int(
+                    (np.isfinite(window_target) & np.isfinite(window_design).all(axis=1)).sum()
+                )
+                if complete_count < min_periods:
+                    continue
+                solved = _solve_joint_window(
+                    window_target,
+                    window_design,
+                    fit_intercept,
+                    endpoint_weights,
+                    penalty_matrix,
+                )
+                if solved is None:
+                    n_singular += 1
+                else:
+                    store(endpoint, target_position, solved)
+
+    if warn_singular:
+        _warn_singular(n_singular)
+    return JointFitResult(
+        coef=coef,
+        intercept=intercept,
+        resid_endpoint=resid_endpoint,
+        ssr=ssr,
+        sst=sst,
+        n_used=n_used,
+        n_eff=n_eff,
+    )
 
 
 def _residualize_single(

@@ -11,9 +11,61 @@ from rols.estimators import (
     _solve_batch,
     hac_se,
     rolling_gram_schmidt,
+    rolling_joint_solve,
     rolling_residualize,
 )
 from rols.model import _ewma_weights
+
+
+class TestRollingJointSolve:
+    """Tests for the authoritative current-window joint solver."""
+
+    def test_exact_intercept_model_is_coherent(self):
+        index = pd.RangeIndex(30)
+        factor = pd.DataFrame({"factor": np.linspace(-2.0, 3.0, len(index))}, index=index)
+        targets = pd.DataFrame({"asset": 3.0 + 2.0 * factor["factor"]}, index=index)
+
+        fit = rolling_joint_solve(
+            targets,
+            factor,
+            window=12,
+            min_periods=8,
+            expanding=False,
+            fit_intercept=True,
+        )
+
+        np.testing.assert_allclose(fit.intercept[7:, 0], 3.0, atol=1e-12)
+        np.testing.assert_allclose(fit.coef[7:, 0, 0], 2.0, atol=1e-12)
+        np.testing.assert_allclose(fit.resid_endpoint[7:, 0], 0.0, atol=1e-12)
+        np.testing.assert_allclose(1 - fit.ssr[7:, 0] / fit.sst[7:, 0], 1.0, atol=1e-12)
+
+    def test_endpoint_identity_holds_for_every_reported_fit(self):
+        rng = np.random.default_rng(12)
+        index = pd.RangeIndex(50)
+        design = pd.DataFrame(
+            rng.normal(size=(50, 3)), index=index, columns=["control_1", "control_2", "factor"]
+        )
+        targets = pd.DataFrame(
+            2.0 + design.to_numpy() @ rng.normal(size=(3, 2)) + rng.normal(size=(50, 2)),
+            index=index,
+            columns=["asset_1", "asset_2"],
+        )
+
+        fit = rolling_joint_solve(
+            targets,
+            design,
+            window=15,
+            min_periods=8,
+            expanding=False,
+            fit_intercept=True,
+        )
+        fitted_endpoint = fit.intercept + np.einsum("tp,tpn->tn", design.to_numpy(), fit.coef)
+        reconstructed = fitted_endpoint + fit.resid_endpoint
+        valid = np.isfinite(reconstructed)
+
+        np.testing.assert_allclose(
+            reconstructed[valid], targets.to_numpy()[valid], rtol=0, atol=1e-10
+        )
 
 
 class TestRollingResidualize:

@@ -6,6 +6,7 @@ import pytest
 
 from rols.estimators import rolling_residualize
 from rols.model import RollingOLS
+from tests.oracle import oracle_rolling
 
 
 class TestRollingOLSInit:
@@ -17,6 +18,7 @@ class TestRollingOLSInit:
         assert ols.window == 252
         assert ols.min_periods == 252
         assert ols.expanding is False
+        assert ols.fit_intercept is True
         assert ols.lambda_ == 0.0
         assert ols.adj_r2 is False
         assert ols.lag_signal is False
@@ -28,6 +30,7 @@ class TestRollingOLSInit:
             window=100,
             min_periods=50,
             expanding=True,
+            fit_intercept=False,
             lambda_=0.01,
             adj_r2=True,
             lag_signal=True,
@@ -36,6 +39,7 @@ class TestRollingOLSInit:
         assert ols.window == 100
         assert ols.min_periods == 50
         assert ols.expanding is True
+        assert ols.fit_intercept is False
         assert ols.lambda_ == 0.01
         assert ols.adj_r2 is True
         assert ols.lag_signal is True
@@ -128,9 +132,10 @@ class TestRollingOLSIndexContract:
     @staticmethod
     def _frames(index: pd.Index) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         size = len(index)
-        factors = pd.DataFrame({"factor": np.arange(size, dtype=float)}, index=index)
-        controls = pd.DataFrame({"control": np.arange(size, dtype=float)}, index=index)
-        assets = pd.DataFrame({"asset": np.arange(size, dtype=float)}, index=index)
+        positions = np.arange(size, dtype=float)
+        factors = pd.DataFrame({"factor": positions}, index=index)
+        controls = pd.DataFrame({"control": positions**2}, index=index)
+        assets = pd.DataFrame({"asset": np.sin(positions)}, index=index)
         return factors, controls, assets
 
     def test_identical_indexes_are_accepted(self):
@@ -289,6 +294,130 @@ class TestRollingOLSTransform:
         result = ols.transform(assets)
 
         assert result is not None
+
+    def test_exact_intercept_model_reports_one_coherent_fit(self):
+        index = pd.RangeIndex(30)
+        factors = pd.DataFrame({"factor": np.linspace(-2.0, 3.0, len(index))}, index=index)
+        assets = pd.DataFrame({"asset": 3.0 + 2.0 * factors["factor"]}, index=index)
+
+        result = RollingOLS(window=12, min_periods=8, dtype="float64").fit_transform(
+            factors, assets
+        )
+
+        np.testing.assert_allclose(result.get_intercept("factor").iloc[7:], 3.0, atol=1e-12)
+        np.testing.assert_allclose(result.get_beta("factor").iloc[7:], 2.0, atol=1e-12)
+        np.testing.assert_allclose(result.get_residuals("factor").iloc[7:], 0.0, atol=1e-12)
+        np.testing.assert_allclose(result.get_r2("factor").iloc[7:], 1.0, atol=1e-12)
+
+    @pytest.mark.parametrize(
+        ("n_controls", "fit_intercept", "expanding"),
+        [
+            (0, True, False),
+            (1, True, False),
+            (3, True, False),
+            (1, False, False),
+            (1, True, True),
+            (1, False, True),
+        ],
+    )
+    def test_joint_model_matches_scalar_oracle(
+        self,
+        panel_factory,
+        n_controls,
+        fit_intercept,
+        expanding,
+    ):
+        targets, factors, controls = panel_factory(
+            n_observations=60,
+            n_targets=2,
+            n_factors=1,
+            n_controls=n_controls,
+            correlation=0.7,
+            nonzero_means=True,
+            seed=13,
+        )
+        model = RollingOLS(
+            window=20,
+            min_periods=10,
+            expanding=expanding,
+            fit_intercept=fit_intercept,
+            dtype="float64",
+        )
+        result = model.fit_transform(factors, targets, controls=controls)
+        expected = oracle_rolling(
+            targets,
+            factors,
+            controls,
+            window=20,
+            min_periods=10,
+            expanding=expanding,
+            fit_intercept=fit_intercept,
+        )
+        factor = factors.columns[0]
+
+        comparisons = {
+            "beta": result.get_beta(factor),
+            "intercept": result.get_intercept(factor),
+            "residuals": result.get_residuals(factor),
+            "r2": result.get_r2(factor),
+            "dof": result.get_dof(factor),
+            "n_used": result.get_n_used(factor),
+        }
+        for quantity, actual in comparisons.items():
+            np.testing.assert_allclose(
+                actual,
+                expected[quantity][factor],
+                rtol=1e-9,
+                atol=1e-12,
+                equal_nan=True,
+            )
+
+    def test_controls_have_single_warmup(self):
+        rng = np.random.default_rng(14)
+        n_observations = 600
+        index = pd.RangeIndex(n_observations)
+        factors = pd.DataFrame({"factor": rng.normal(size=n_observations)}, index=index)
+        controls = pd.DataFrame({"control": rng.normal(size=n_observations)}, index=index)
+        assets = pd.DataFrame({"asset": rng.normal(size=n_observations)}, index=index)
+
+        result = RollingOLS(window=252, min_periods=252, dtype="float64").fit_transform(
+            factors, assets, controls=controls
+        )
+        first_valid = np.flatnonzero(result.get_beta("factor").notna().to_numpy()[:, 0])[0]
+
+        assert first_valid == 251
+
+    def test_nonzero_mean_controls_change_the_old_nested_composition(self):
+        rng = np.random.default_rng(15)
+        n_observations = 100
+        factor_values = 2.0 + rng.normal(size=n_observations)
+        control_values = 1.0 + 0.8 * factor_values + rng.normal(scale=0.2, size=n_observations)
+        factors = pd.DataFrame({"factor": factor_values})
+        controls = pd.DataFrame({"control": control_values})
+        assets = pd.DataFrame(
+            {"asset": 5.0 + 2.0 * factor_values - 3.0 * control_values + rng.normal(size=100)}
+        )
+
+        current = RollingOLS(window=20, min_periods=20, dtype="float64").fit_transform(
+            factors, assets, controls=controls
+        )
+        old_factor_residual = rolling_residualize(
+            factors, controls, window=20, min_periods=20, expanding=False
+        )["factor"]
+        old_asset_residual = rolling_residualize(
+            assets, controls, window=20, min_periods=20, expanding=False
+        )
+        old_beta = (
+            old_asset_residual.rolling(20, min_periods=20)
+            .cov(old_factor_residual)
+            .div(old_factor_residual.rolling(20, min_periods=20).var(), axis=0)
+        )
+        comparison_rows = current.get_beta("factor").notna() & old_beta.notna()
+
+        assert not np.allclose(
+            current.get_beta("factor").to_numpy()[comparison_rows.to_numpy()],
+            old_beta.to_numpy()[comparison_rows.to_numpy()],
+        )
 
     def test_control_beta_shape(self):
         """get_control_beta returns shape (T, N_assets)."""

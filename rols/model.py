@@ -6,13 +6,12 @@ RollingOLS: sklearn/statsmodels-style rolling time-series OLS (or Ridge).
 
 Design
 ------
-- fit(factors, controls=None)   : Frisch-Waugh step — residualize factors
-- transform(assets)             : project assets, compute betas/signals/R²
+- fit(factors, controls=None)   : validate and store the regressor groups
+- transform(assets)             : solve each factor model on every current window
 - fit_transform(...)            : convenience one-liner
 
-Frisch-Waugh-Lovell partitioning keeps per-factor math univariate regardless
-of how many controls are added, and is numerically equivalent to the full
-joint regression.
+Each factor is fitted with the controls in one direct joint solve. Every
+reported quantity for an endpoint and target comes from that same fit.
 
 Ridge regularization (lambda_ > 0) adds λI to X'X before solving — stabilizes
 estimation when regressors are collinear, at the cost of shrinking betas toward
@@ -34,7 +33,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .estimators import rolling_gram_schmidt, rolling_residualize
+from .estimators import (
+    JointFitResult,
+    rolling_gram_schmidt,
+    rolling_joint_solve,
+    rolling_residualize,
+)
 from .results import RollingOLSResult
 
 _INDEX_CONTRACT_GUIDANCE = (
@@ -255,6 +259,8 @@ class RollingOLS:
         Minimum observations to produce a result. Defaults to window.
     expanding : bool
         Use expanding window instead of rolling.
+    fit_intercept : bool
+        Include an explicit intercept in every window fit. Defaults to True.
     lambda_ : float
         Ridge regularization strength. 0.0 = standard OLS (default).
         Adding a small value (e.g. 1e-4) stabilizes collinear regressors.
@@ -333,6 +339,7 @@ class RollingOLS:
         window: int = 252,
         min_periods: int | None = None,
         expanding: bool = False,
+        fit_intercept: bool = True,
         lambda_: float = 0.0,
         adj_r2: bool = False,
         lag_signal: bool = False,
@@ -353,6 +360,7 @@ class RollingOLS:
         self.window = window
         self.min_periods = min_periods if min_periods is not None else window
         self.expanding = expanding
+        self.fit_intercept = fit_intercept
         self.lambda_ = lambda_
         self.ewma_halflife = ewma_halflife
         self.adj_r2 = adj_r2
@@ -368,7 +376,7 @@ class RollingOLS:
         self._control_cols: list[str] = []
         self._index: pd.Index | None = None
         self._factors_raw: pd.DataFrame | None = None  # original, for signal
-        self._factor_resids: pd.DataFrame | None = None  # after FWL step 1
+        self._factors_fitted: pd.DataFrame | None = None
         self._controls_fitted: pd.DataFrame | None = None
 
     def _weights(self) -> np.ndarray | None:
@@ -376,6 +384,35 @@ class RollingOLS:
         if self.ewma_halflife is None:
             return None
         return _ewma_weights(self.ewma_halflife, self.window)
+
+    def _solve_targets(self, targets: pd.DataFrame, design: pd.DataFrame) -> JointFitResult:
+        """Run the joint solver in target-column chunks and combine its outputs."""
+        chunks = [
+            targets.columns[i : i + self.asset_chunk_size]
+            for i in range(0, targets.shape[1], self.asset_chunk_size)
+        ]
+        fits = [
+            rolling_joint_solve(
+                y=targets.loc[:, chunk],
+                X=design,
+                window=self.window,
+                min_periods=self.min_periods,
+                expanding=self.expanding,
+                fit_intercept=self.fit_intercept,
+                weights=self._weights(),
+                warn_singular=self.warn_singular,
+            )
+            for chunk in chunks
+        ]
+        return JointFitResult(
+            coef=np.concatenate([fit.coef for fit in fits], axis=2),
+            intercept=np.concatenate([fit.intercept for fit in fits], axis=1),
+            resid_endpoint=np.concatenate([fit.resid_endpoint for fit in fits], axis=1),
+            ssr=np.concatenate([fit.ssr for fit in fits], axis=1),
+            sst=np.concatenate([fit.sst for fit in fits], axis=1),
+            n_used=np.concatenate([fit.n_used for fit in fits], axis=1),
+            n_eff=np.concatenate([fit.n_eff for fit in fits], axis=1),
+        )
 
     # ------------------------------------------------------------------
     # fit
@@ -389,7 +426,7 @@ class RollingOLS:
         orthogonalize_controls: bool = False,
     ) -> RollingOLS:
         """
-        Fit the model on the regressors side (Frisch-Waugh step 1).
+        Validate and store the regressors used by each window fit.
 
         Optionally orthogonalizes factors and/or controls via rolling
         Gram-Schmidt before residualization. Column order determines
@@ -435,6 +472,7 @@ class RollingOLS:
             ).astype(self.dtype)
 
         self._factor_cols = factors.columns.tolist()
+        self._factors_fitted = factors
 
         if controls is not None:
             controls = controls.astype(self.dtype)
@@ -450,21 +488,9 @@ class RollingOLS:
 
             self._control_cols = controls.columns.tolist()
             self._controls_fitted = controls
-
-            self._factor_resids = rolling_residualize(
-                y=factors,
-                X=controls,
-                window=self.window,
-                min_periods=self.min_periods,
-                expanding=self.expanding,
-                ridge_lambda=self.lambda_,
-                warn_singular=self.warn_singular,
-                weights=self._weights(),
-            )
         else:
             self._control_cols = []
             self._controls_fitted = None
-            self._factor_resids = factors
 
         self._is_fitted = True
         return self
@@ -506,27 +532,17 @@ class RollingOLS:
         asset_cols = assets.columns.tolist()
         assets = assets.astype(self.dtype)
 
-        # Frisch-Waugh step 2: residualize assets against controls (chunked)
+        if self._factors_fitted is None or self._factors_raw is None:
+            raise RuntimeError("Fitted factors are unavailable. Call fit() again.")
+
+        # Preserve the controls-only residual accessor using a separate direct
+        # current-window model. It is not used to estimate factor coefficients.
         if self._controls_fitted is not None:
-            chunks = [
-                asset_cols[i : i + self.asset_chunk_size]
-                for i in range(0, len(asset_cols), self.asset_chunk_size)
-            ]
-            asset_resids = pd.concat(
-                [
-                    rolling_residualize(
-                        y=assets[chunk],
-                        X=self._controls_fitted,
-                        window=self.window,
-                        min_periods=self.min_periods,
-                        expanding=self.expanding,
-                        ridge_lambda=self.lambda_,
-                        warn_singular=self.warn_singular,
-                        weights=self._weights(),
-                    )
-                    for chunk in chunks
-                ],
-                axis=1,
+            controls_only_fit = self._solve_targets(assets, self._controls_fitted)
+            asset_resids = pd.DataFrame(
+                controls_only_fit.resid_endpoint,
+                index=assets.index,
+                columns=assets.columns,
             )
         else:
             asset_resids = assets
@@ -542,71 +558,60 @@ class RollingOLS:
             hac_lags=self.hac_lags,
         )
 
-        # FWL step 2 output: asset returns residualized against controls (or the
-        # original assets when no controls were fitted). Store a reference, not a
-        # copy — exposed via result.get_factor_adjusted_returns().
+        # Controls-only endpoint residuals, retained for the existing accessor.
         result._factor_adjusted_returns = asset_resids
 
-        # Precompute asset residual variance once — shared across all factors.
-        # With EWMA weighting, use the custom weighted moments (pandas built-ins
-        # don't support per-observation weights); otherwise the equal-weight path.
-        weights = self._weights()
-
-        if weights is not None:
-            var_y = _ewma_var(asset_resids, weights, self.window, self.min_periods)
-        else:
-            var_y = _rolling_var(asset_resids, self.window, self.min_periods, self.expanding)
-
         for fac in self._factor_cols:
-            f_resid = self._factor_resids[fac]
+            design_parts = []
+            if self._controls_fitted is not None:
+                design_parts.append(self._controls_fitted)
+            design_parts.append(self._factors_fitted[[fac]])
+            design = pd.concat(design_parts, axis=1)
+            fit = self._solve_targets(assets, design)
 
-            if weights is not None:
-                cov_af = _ewma_cov_series_df(
-                    f_resid, asset_resids, weights, self.window, self.min_periods
+            beta = pd.DataFrame(fit.coef[:, -1, :], index=assets.index, columns=assets.columns)
+            intercept = pd.DataFrame(fit.intercept, index=assets.index, columns=assets.columns)
+            residuals = pd.DataFrame(fit.resid_endpoint, index=assets.index, columns=assets.columns)
+            n_used = pd.DataFrame(fit.n_used, index=assets.index, columns=assets.columns)
+            residual_dof = fit.n_eff - design.shape[1] - int(self.fit_intercept)
+            dof = pd.DataFrame(residual_dof, index=assets.index, columns=assets.columns)
+            r2_values = np.divide(
+                fit.ssr,
+                fit.sst,
+                out=np.full_like(fit.ssr, np.nan),
+                where=fit.sst > self.denom_tol,
+            )
+            r2_values = 1.0 - r2_values
+            if self.adj_r2:
+                numerator_dof = fit.n_eff - int(self.fit_intercept)
+                adjustment = np.divide(
+                    numerator_dof,
+                    residual_dof,
+                    out=np.full_like(residual_dof, np.nan),
+                    where=residual_dof > 0,
                 )
-                var_f = _ewma_var(f_resid, weights, self.window, self.min_periods)
-            else:
-                cov_af = _rolling_cov_series_df(
-                    f_resid, asset_resids, self.window, self.min_periods, self.expanding
-                )
-                var_f = _rolling_var(f_resid, self.window, self.min_periods, self.expanding)
-            var_f_safe = var_f.where(var_f.abs() > self.denom_tol)
+                r2_values = 1.0 - (1.0 - r2_values) * adjustment
+            r2 = pd.DataFrame(r2_values, index=assets.index, columns=assets.columns)
 
-            # Beta
-            beta = cov_af.div(var_f_safe, axis=0)
-
-            # Signal — always uses raw (non-orthogonalized) factor values
             f_orig = self._factors_raw[fac]
             signal = (
                 beta.shift(1).mul(f_orig, axis=0) if self.lag_signal else beta.mul(f_orig, axis=0)
             )
 
-            # R²
-            r2 = (cov_af**2).div(var_f_safe.values[:, None] * var_y, axis=0)
-            if self.adj_r2:
-                n_obs = (
-                    asset_resids.expanding(min_periods=self.min_periods).count()
-                    if self.expanding
-                    else asset_resids.rolling(self.window, min_periods=self.min_periods).count()
-                )
-                # adjusted R² is undefined with fewer than 3 observations;
-                # guard the denominator so n_obs <= 2 yields NaN, not inf.
-                safe_denom = (n_obs - 2).where(n_obs > 2)
-                r2 = 1.0 - (1.0 - r2) * (n_obs - 1) / safe_denom
-
-            # Residuals — needed for HAC SE on demand
-            reg_resids = asset_resids - beta.mul(f_resid, axis=0)
-
             result._betas[fac] = beta
+            result._intercepts[fac] = intercept
             result._signals[fac] = signal
             result._r2[fac] = r2
-            result._residuals[fac] = reg_resids
-            result._factor_values[fac] = f_resid
+            result._residuals[fac] = residuals
+            result._dof[fac] = dof
+            result._n_used[fac] = n_used
+            result._factor_values[fac] = self._factors_fitted[fac]
 
         # Control betas via FWL — independent of factor, so computed once and
         # shared across all factors. For each control, partial it (and the
         # assets) against all OTHER controls, then rolling univariate OLS.
         control_betas: dict = {}
+        weights = self._weights()
         if return_control_betas and self._controls_fitted is not None:
             for ctrl in self._control_cols:
                 other_controls = [c for c in self._control_cols if c != ctrl]

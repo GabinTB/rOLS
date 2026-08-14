@@ -31,6 +31,22 @@ class TestRollingOLSResultGetters:
         assert beta.shape == (100, 3)
         assert list(beta.columns) == ["a1", "a2", "a3"]
 
+    def test_get_intercept(self, setup_result):
+        """Test get_intercept method."""
+        intercept = setup_result.get_intercept("f1")
+
+        assert isinstance(intercept, pd.DataFrame)
+        assert intercept.shape == (100, 3)
+
+    def test_get_dof_and_n_used(self, setup_result):
+        """Test fit sample metadata getters."""
+        dof = setup_result.get_dof("f1")
+        n_used = setup_result.get_n_used("f1")
+
+        assert dof.shape == (100, 3)
+        assert n_used.shape == (100, 3)
+        np.testing.assert_allclose(dof.dropna(), n_used.dropna() - 2.0)
+
     def test_get_signal(self, setup_result):
         """Test get_signal method."""
         result = setup_result
