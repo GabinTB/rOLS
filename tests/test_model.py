@@ -871,6 +871,102 @@ class TestRollingOLSModes:
         assert (valid <= 1.0).all()
 
 
+class TestRollingOLSSignalRepresentation:
+    """Signals distinguish the solver regressor from the raw exposure."""
+
+    @pytest.mark.parametrize("with_controls", [False, True])
+    def test_signals_are_identical_without_factor_orthogonalization(self, with_controls):
+        rng = np.random.default_rng(48)
+        factors = pd.DataFrame(rng.normal(size=(50, 2)), columns=["f1", "f2"])
+        controls = pd.DataFrame({"control": rng.normal(size=50)}) if with_controls else None
+        assets = pd.DataFrame({"asset": rng.normal(size=50)})
+
+        result = RollingOLS(window=20, dtype="float64").fit_transform(
+            factors, assets, controls=controls
+        )
+
+        for factor in factors.columns:
+            pd.testing.assert_frame_equal(
+                result.get_signal(factor),
+                result.get_raw_exposure_signal(factor),
+                check_exact=True,
+            )
+
+    def test_orthogonalization_difference_identity(self):
+        rng = np.random.default_rng(49)
+        first = rng.normal(size=60)
+        factors = pd.DataFrame(
+            {
+                "f1": first,
+                "f2": 0.8 * first + rng.normal(scale=0.2, size=60),
+            }
+        )
+        assets = pd.DataFrame({"asset": rng.normal(size=60)})
+        model = RollingOLS(window=20, dtype="float64")
+        result = model.fit_transform(factors, assets, orthogonalize_factors=True)
+        factor = "f2"
+
+        difference = result.get_raw_exposure_signal(factor) - result.get_signal(factor)
+        expected = result.get_beta(factor).mul(
+            factors[factor] - model._factors_fitted[factor],
+            axis=0,
+        )
+
+        assert not result.get_signal(factor).equals(result.get_raw_exposure_signal(factor))
+        np.testing.assert_allclose(
+            difference,
+            expected,
+            rtol=0,
+            atol=1e-12,
+            equal_nan=True,
+        )
+
+    def test_fitted_contribution_reconstructs_endpoint_target(self):
+        rng = np.random.default_rng(50)
+        factors = pd.DataFrame({"factor": rng.normal(size=40)})
+        assets = pd.DataFrame({"asset": 3.0 + 2.0 * factors["factor"]})
+        result = RollingOLS(window=15, min_periods=10, dtype="float64").fit_transform(
+            factors, assets
+        )
+
+        reconstructed = (
+            result.get_intercept("factor")
+            + result.get_signal("factor")
+            + result.get_residuals("factor")
+        )
+        valid = reconstructed.notna()
+        np.testing.assert_allclose(
+            reconstructed.to_numpy()[valid],
+            assets.to_numpy()[valid],
+            rtol=0,
+            atol=1e-12,
+        )
+
+    def test_lagged_signals_use_previous_beta_and_current_factor(self):
+        rng = np.random.default_rng(51)
+        first = rng.normal(size=45)
+        factors = pd.DataFrame(
+            {
+                "f1": first,
+                "f2": 0.7 * first + rng.normal(scale=0.3, size=45),
+            }
+        )
+        assets = pd.DataFrame({"asset": rng.normal(size=45)})
+        model = RollingOLS(window=15, lag_signal=True, dtype="float64")
+        result = model.fit_transform(factors, assets, orthogonalize_factors=True)
+        endpoint = 30
+        previous_beta = result.get_beta("f2").iloc[endpoint - 1, 0]
+
+        assert result.get_signal("f2").iloc[endpoint, 0] == pytest.approx(
+            previous_beta * model._factors_fitted["f2"].iloc[endpoint],
+            abs=1e-12,
+        )
+        assert result.get_raw_exposure_signal("f2").iloc[endpoint, 0] == pytest.approx(
+            previous_beta * factors["f2"].iloc[endpoint],
+            abs=1e-12,
+        )
+
+
 class TestRollingOLSR2Definitions:
     """Full and partial R² use coherent nested fits and effective dof."""
 

@@ -559,20 +559,29 @@ class RollingOLS:
                 columns=assets.columns,
             )
 
-            f_orig = self._factors_raw[fac]
+            factor_used = self._factors_fitted[fac]
+            factor_raw = self._factors_raw[fac]
             signal = (
-                beta.shift(1).mul(f_orig, axis=0) if self.lag_signal else beta.mul(f_orig, axis=0)
+                beta.shift(1).mul(factor_used, axis=0)
+                if self.lag_signal
+                else beta.mul(factor_used, axis=0)
+            )
+            raw_exposure_signal = (
+                beta.shift(1).mul(factor_raw, axis=0)
+                if self.lag_signal
+                else beta.mul(factor_raw, axis=0)
             )
 
             result._betas[fac] = beta
             result._intercepts[fac] = intercept
             result._signals[fac] = signal
+            result._raw_exposure_signals[fac] = raw_exposure_signal
             result._r2[fac] = r2
             result._partial_r2[fac] = partial_r2
             result._residuals[fac] = residuals
             result._dof[fac] = dof
             result._n_used[fac] = n_used
-            result._factor_values[fac] = self._factors_fitted[fac]
+            result._factor_values[fac] = factor_used
             if return_control_betas and self._controls_fitted is not None:
                 direct_control_betas[fac] = {
                     control: pd.DataFrame(
