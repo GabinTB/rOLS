@@ -253,6 +253,7 @@ def rolling_residualize(
     -------
     pd.DataFrame, same shape/index/columns as y
     """
+    assert y.index.equals(X.index), "y and X must have identical indexes"
     if weights is not None and expanding:
         raise ValueError("weights are not supported with expanding=True")
     y_np = y.to_numpy(dtype=np.float64)

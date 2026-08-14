@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from rols.estimators import rolling_residualize
 from rols.model import RollingOLS
 
 
@@ -119,6 +120,100 @@ class TestRollingOLSFit:
         ols.fit(factors)
 
         assert ols.lambda_ == 0.01
+
+
+class TestRollingOLSIndexContract:
+    """Indexes must be identical, unique, and increasing across all inputs."""
+
+    @staticmethod
+    def _frames(index: pd.Index) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        size = len(index)
+        factors = pd.DataFrame({"factor": np.arange(size, dtype=float)}, index=index)
+        controls = pd.DataFrame({"control": np.arange(size, dtype=float)}, index=index)
+        assets = pd.DataFrame({"asset": np.arange(size, dtype=float)}, index=index)
+        return factors, controls, assets
+
+    def test_identical_indexes_are_accepted(self):
+        index = pd.date_range("2024-01-01", periods=8)
+        factors, controls, assets = self._frames(index)
+
+        result = RollingOLS(window=4).fit_transform(factors, assets, controls=controls)
+
+        assert result.index.equals(index)
+
+    def test_permuted_control_index_raises_and_names_frames(self):
+        index = pd.date_range("2024-01-01", periods=8)
+        factors, controls, _ = self._frames(index)
+        controls = controls.iloc[::-1]
+
+        with pytest.raises(ValueError, match="'factors'.*'controls'"):
+            RollingOLS(window=4).fit(factors, controls=controls)
+
+    def test_partially_overlapping_index_raises_at_first_divergence(self):
+        factor_index = pd.date_range("2024-01-01", periods=8)
+        control_index = pd.date_range("2024-01-02", periods=8)
+        factors, _, _ = self._frames(factor_index)
+        _, controls, _ = self._frames(control_index)
+
+        with pytest.raises(ValueError, match="differ from position 0"):
+            RollingOLS(window=4).fit(factors, controls=controls)
+
+    def test_duplicate_index_raises_and_names_labels(self):
+        index = pd.Index([0, 1, 1, 2])
+        factors, _, _ = self._frames(index)
+
+        with pytest.raises(ValueError, match=r"'factors'.*duplicate labels \[1\]"):
+            RollingOLS(window=2).fit(factors)
+
+    def test_non_monotonic_index_raises(self):
+        index = pd.Index([0, 2, 1, 3])
+        factors, _, _ = self._frames(index)
+
+        with pytest.raises(ValueError, match="'factors'.*not monotonically increasing"):
+            RollingOLS(window=2).fit(factors)
+
+    def test_different_lengths_raise_and_report_lengths(self):
+        factor_index = pd.RangeIndex(8)
+        control_index = pd.RangeIndex(7)
+        factors, _, _ = self._frames(factor_index)
+        _, controls, _ = self._frames(control_index)
+
+        with pytest.raises(ValueError, match="lengths 8 and 7"):
+            RollingOLS(window=4).fit(factors, controls=controls)
+
+    def test_different_index_types_raise(self):
+        factors, _, _ = self._frames(pd.RangeIndex(8))
+        _, controls, _ = self._frames(pd.Index(np.arange(8)))
+
+        with pytest.raises(ValueError, match="different index types"):
+            RollingOLS(window=4).fit(factors, controls=controls)
+
+    def test_transform_index_must_match_fitted_index(self):
+        factor_index = pd.date_range("2024-01-01", periods=8)
+        asset_index = pd.date_range("2024-01-02", periods=8)
+        factors, _, _ = self._frames(factor_index)
+        _, _, assets = self._frames(asset_index)
+        model = RollingOLS(window=4).fit(factors)
+
+        with pytest.raises(ValueError, match="'factors'.*'assets'.*differ from position 0"):
+            model.transform(assets)
+
+    def test_permuted_target_index_raises_instead_of_returning_corrupt_result(self):
+        index = pd.date_range("2024-01-01", periods=12)
+        factors, _, assets = self._frames(index)
+        model = RollingOLS(window=4).fit(factors)
+        model.transform(assets)
+        permuted_assets = assets.iloc[::-1]
+
+        with pytest.raises(ValueError, match="'factors'.*'assets'"):
+            model.transform(permuted_assets)
+
+    def test_numpy_boundary_asserts_identical_indexes(self):
+        y = pd.DataFrame({"asset": np.arange(6.0)}, index=pd.RangeIndex(6))
+        X = pd.DataFrame({"factor": np.arange(6.0)}, index=pd.RangeIndex(1, 7))
+
+        with pytest.raises(AssertionError, match="identical indexes"):
+            rolling_residualize(y, X, window=3, min_periods=3, expanding=False)
 
 
 class TestRollingOLSTransform:

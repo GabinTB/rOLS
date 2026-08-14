@@ -37,6 +37,77 @@ import pandas as pd
 from .estimators import rolling_gram_schmidt, rolling_residualize
 from .results import RollingOLSResult
 
+_INDEX_CONTRACT_GUIDANCE = (
+    "rOLS requires an identical, unique, monotonic index across factors, controls, "
+    "and targets. Align inputs before calling, e.g. via "
+    "df = pd.concat([factors, controls, assets], axis=1).dropna()."
+)
+
+
+def _validate_index(
+    *frames: pd.DataFrame | pd.Series,
+    names: list[str],
+) -> None:
+    """Enforce identical, unique, monotonically increasing input indexes."""
+    if len(frames) != len(names):
+        raise ValueError("frames and names must have the same length")
+    if not frames:
+        return
+
+    for frame, name in zip(frames, names, strict=True):
+        index = frame.index
+        if not index.is_unique:
+            duplicate_labels = index[index.duplicated()].unique().tolist()
+            raise ValueError(
+                f"index for '{name}' contains duplicate labels {duplicate_labels!r}. "
+                f"{_INDEX_CONTRACT_GUIDANCE}"
+            )
+
+    validation_names = " and ".join(f"'{name}'" for name in names)
+    for frame, name in zip(frames, names, strict=True):
+        if not frame.index.is_monotonic_increasing:
+            raise ValueError(
+                f"index for '{name}' is not monotonically increasing while validating "
+                f"{validation_names}. {_INDEX_CONTRACT_GUIDANCE}"
+            )
+
+    reference_index = frames[0].index
+    reference_name = names[0]
+    for frame, name in zip(frames[1:], names[1:], strict=True):
+        index = frame.index
+        if type(reference_index) is type(index) and reference_index.equals(index):
+            continue
+
+        common_length = min(len(reference_index), len(index))
+        mismatch_position = next(
+            (
+                position
+                for position in range(common_length)
+                if not pd.Index([reference_index[position]], tupleize_cols=False).equals(
+                    pd.Index([index[position]], tupleize_cols=False)
+                )
+            ),
+            None,
+        )
+        if mismatch_position is not None:
+            divergence = (
+                f"differ from position {mismatch_position} "
+                f"({reference_name}[{mismatch_position}]={reference_index[mismatch_position]!r}, "
+                f"{name}[{mismatch_position}]={index[mismatch_position]!r})"
+            )
+        elif len(reference_index) != len(index):
+            divergence = f"first differ at position {common_length}, where one index has ended"
+        else:
+            divergence = (
+                "contain the same labels but use different index types "
+                f"({type(reference_index).__name__} and {type(index).__name__})"
+            )
+        raise ValueError(
+            f"index mismatch between '{reference_name}' and '{name}': lengths "
+            f"{len(reference_index)} and {len(index)}; {divergence}. "
+            f"{_INDEX_CONTRACT_GUIDANCE}"
+        )
+
 
 def _rolling_cov_series_df(
     s: pd.Series,
@@ -295,6 +366,7 @@ class RollingOLS:
         self._is_fitted = False
         self._factor_cols: list[str] = []
         self._control_cols: list[str] = []
+        self._index: pd.Index | None = None
         self._factors_raw: pd.DataFrame | None = None  # original, for signal
         self._factor_resids: pd.DataFrame | None = None  # after FWL step 1
         self._controls_fitted: pd.DataFrame | None = None
@@ -345,7 +417,12 @@ class RollingOLS:
         -------
         self
         """
+        frames = [factors] if controls is None else [factors, controls]
+        names = ["factors"] if controls is None else ["factors", "controls"]
+        _validate_index(*frames, names=names)
+
         factors = factors.astype(self.dtype)
+        self._index = factors.index.copy()
         self._factors_raw = factors  # kept for signal computation
 
         if orthogonalize_factors and factors.shape[1] > 1:
@@ -421,6 +498,10 @@ class RollingOLS:
         """
         if not self._is_fitted:
             raise RuntimeError("Call fit() before transform().")
+        if self._index is None:
+            raise RuntimeError("Fitted index is unavailable. Call fit() again before transform().")
+        fitted_index = pd.DataFrame(index=self._index)
+        _validate_index(fitted_index, assets, names=["factors", "assets"])
 
         asset_cols = assets.columns.tolist()
         assets = assets.astype(self.dtype)
