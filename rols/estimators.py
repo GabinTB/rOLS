@@ -97,12 +97,12 @@ def _solve_batch(XtX: np.ndarray, XtY: np.ndarray, warn_singular: bool = True) -
 def _solve_joint_window(
     target: np.ndarray,
     design: np.ndarray,
+    complete_case: np.ndarray,
     fit_intercept: bool,
     weights: np.ndarray | None,
     penalty: np.ndarray,
 ) -> tuple[np.ndarray, float, float, float, int, float] | None:
     """Solve one complete-case window for one target."""
-    complete_case = np.isfinite(target) & np.isfinite(design).all(axis=1)
     n_used = int(complete_case.sum())
     if n_used == 0:
         return None
@@ -254,16 +254,13 @@ def rolling_joint_solve(
         n_used[endpoint, target_position] = window_n_used
         n_eff[endpoint, target_position] = window_n_eff
 
-    clean_rolling = (
-        not expanding
-        and np.isfinite(design).all()
-        and np.isfinite(target_values).all()
-        and n_observations >= window
-    )
+    vectorizable_rolling = not expanding and np.isfinite(design).all() and n_observations >= window
     n_singular = 0
-    if clean_rolling:
+    if vectorizable_rolling:
+        clean_target_positions = np.flatnonzero(np.isfinite(target_values).all(axis=0))
+        dirty_target_positions = np.flatnonzero(~np.isfinite(target_values).all(axis=0))
         design_windows = _make_windows(design, window)
-        target_windows = _make_windows(target_values, window)
+        target_windows = _make_windows(target_values[:, clean_target_positions], window)
         window_weights = (
             np.full(window, 1.0 / window)
             if supplied_weights is None
@@ -301,24 +298,27 @@ def rolling_joint_solve(
             parameters[:, 0, :] -= np.einsum("tk,tkn->tn", means[:, 1:], parameters[:, 1:, :])
         parameters[~valid_scales] = np.nan
         endpoints = np.arange(parameters.shape[0]) + window - 1
-        if fit_intercept:
-            intercept[endpoints] = parameters[:, 0, :]
-            coef[endpoints] = parameters[:, 1:, :]
-        else:
-            intercept[endpoints] = 0.0
-            coef[endpoints] = parameters
         fitted_windows = np.einsum("twk,tkn->twn", design_windows, parameters)
         residual_windows = target_windows - fitted_windows
-        resid_endpoint[endpoints] = residual_windows[:, -1, :]
-        ssr[endpoints] = np.einsum("w,twn->tn", window_weights, residual_windows**2)
+        window_ssr = np.einsum("w,twn->tn", window_weights, residual_windows**2)
         if fit_intercept:
             target_means = np.einsum("w,twn->tn", window_weights, target_windows)
             centered_targets = target_windows - target_means[:, None, :]
-            sst[endpoints] = np.einsum("w,twn->tn", window_weights, centered_targets**2)
+            window_sst = np.einsum("w,twn->tn", window_weights, centered_targets**2)
         else:
-            sst[endpoints] = np.einsum("w,twn->tn", window_weights, target_windows**2)
-        n_used[endpoints] = window
-        n_eff[endpoints] = 1.0 / np.sum(window_weights**2)
+            window_sst = np.einsum("w,twn->tn", window_weights, target_windows**2)
+        for local_position, target_position in enumerate(clean_target_positions):
+            if fit_intercept:
+                intercept[endpoints, target_position] = parameters[:, 0, local_position]
+                coef[endpoints, :, target_position] = parameters[:, 1:, local_position]
+            else:
+                intercept[endpoints, target_position] = 0.0
+                coef[endpoints, :, target_position] = parameters[:, :, local_position]
+            resid_endpoint[endpoints, target_position] = residual_windows[:, -1, local_position]
+            ssr[endpoints, target_position] = window_ssr[:, local_position]
+            sst[endpoints, target_position] = window_sst[:, local_position]
+            n_used[endpoints, target_position] = window
+            n_eff[endpoints, target_position] = 1.0 / np.sum(window_weights**2)
 
         early_stop = min(window - 1, n_observations)
         for endpoint in range(min_periods - 1, early_stop):
@@ -326,9 +326,34 @@ def rolling_joint_solve(
                 None if supplied_weights is None else supplied_weights[-(endpoint + 1) :]
             )
             for target_position in range(n_targets):
+                complete_case = np.isfinite(target_values[: endpoint + 1, target_position])
+                if int(complete_case.sum()) < min_periods:
+                    continue
                 solved = _solve_joint_window(
                     target_values[: endpoint + 1, target_position],
                     design[: endpoint + 1],
+                    complete_case,
+                    fit_intercept,
+                    endpoint_weights,
+                    penalty_matrix,
+                )
+                if solved is None:
+                    n_singular += 1
+                else:
+                    store(endpoint, target_position, solved)
+        for endpoint in range(window - 1, n_observations):
+            start = endpoint - window + 1
+            endpoint_weights = supplied_weights
+            window_design = design[start : endpoint + 1]
+            for target_position in dirty_target_positions:
+                window_target = target_values[start : endpoint + 1, target_position]
+                complete_case = np.isfinite(window_target)
+                if int(complete_case.sum()) < min_periods:
+                    continue
+                solved = _solve_joint_window(
+                    window_target,
+                    window_design,
+                    complete_case,
                     fit_intercept,
                     endpoint_weights,
                     penalty_matrix,
@@ -346,14 +371,13 @@ def rolling_joint_solve(
             for target_position in range(n_targets):
                 window_target = target_values[start : endpoint + 1, target_position]
                 window_design = design[start : endpoint + 1]
-                complete_count = int(
-                    (np.isfinite(window_target) & np.isfinite(window_design).all(axis=1)).sum()
-                )
-                if complete_count < min_periods:
+                complete_case = np.isfinite(window_target) & np.isfinite(window_design).all(axis=1)
+                if int(complete_case.sum()) < min_periods:
                     continue
                 solved = _solve_joint_window(
                     window_target,
                     window_design,
+                    complete_case,
                     fit_intercept,
                     endpoint_weights,
                     penalty_matrix,

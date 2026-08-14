@@ -157,7 +157,7 @@ class TestIntegrationDataHandling:
         assert result.get_tstat("sentiment").shape == (T, 2)
 
     def test_with_missing_data(self):
-        """Test with missing data (NaNs)."""
+        """Irregular histories keep per-asset complete-case counts."""
         np.random.seed(42)
         T = 100
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
@@ -167,11 +167,12 @@ class TestIntegrationDataHandling:
         factors.iloc[10:15, 0] = np.nan
         assets.iloc[20:25, 1] = np.nan
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, min_periods=10)
         result = ols.fit_transform(factors, assets)
 
-        # Should handle NaNs gracefully
         assert result.get_beta("f1").shape == (T, 2)
+        assert result.get_n_used("f1").loc[24, "a1"] == 15
+        assert result.get_n_used("f1").loc[24, "a2"] == 10
 
     def test_with_custom_index(self):
         """Test with custom time index."""

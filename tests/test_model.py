@@ -441,42 +441,60 @@ class TestRollingOLSTransform:
         assert cb.shape == (T, 3)
         assert list(cb.columns) == ["a1", "a2", "a3"]
 
-    def test_control_beta_shared_across_factors(self):
-        """Control betas do not depend on the factor — identical for all factors."""
+    def test_control_beta_matches_each_factor_specific_joint_fit(self):
+        """Each control beta comes from the same fit as its requested factor."""
         np.random.seed(0)
         T = 120
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, dtype="float64")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
-
-        pd.testing.assert_frame_equal(
-            result.get_control_beta("f1", "c1"),
-            result.get_control_beta("f2", "c1"),
+        expected = oracle_rolling(
+            assets,
+            factors,
+            controls,
+            window=20,
+            min_periods=20,
+            expanding=False,
         )
 
-    def test_control_beta_single_control_matches_univariate(self):
-        """With one control, FWL is identity: control beta == plain univariate beta."""
+        for factor in factors.columns:
+            for control in controls.columns:
+                np.testing.assert_allclose(
+                    result.get_control_beta(factor, control),
+                    expected["control_beta"][factor][control],
+                    rtol=1e-9,
+                    atol=1e-12,
+                    equal_nan=True,
+                )
+
+    def test_control_beta_single_control_matches_joint_oracle(self):
+        """A single control is still estimated jointly with the requested factor."""
         np.random.seed(1)
         T = 150
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=30)
+        ols = RollingOLS(window=30, dtype="float64")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
-        joint = result.get_control_beta("f1", "c1")
+        expected = oracle_rolling(
+            assets,
+            factors,
+            controls,
+            window=30,
+            min_periods=30,
+            expanding=False,
+        )
 
-        # Plain rolling univariate beta of assets on the single control
-        c = controls["c1"]
-        cov = assets.rolling(30, min_periods=30).cov(c)
-        var = c.rolling(30, min_periods=30).var()
-        univariate = cov.div(var, axis=0)
-
-        pd.testing.assert_frame_equal(
-            joint, univariate.astype(joint.dtypes), check_dtype=False, rtol=1e-3
+        np.testing.assert_allclose(
+            result.get_control_beta("f1", "c1"),
+            expected["control_beta"]["f1"]["c1"],
+            rtol=1e-9,
+            atol=1e-12,
+            equal_nan=True,
         )
 
     def test_control_beta_multiple_correlated_differs_from_univariate(self):
@@ -530,6 +548,164 @@ class TestRollingOLSTransform:
 
         with pytest.raises(RuntimeError):
             result.get_control_beta("f1", "c1")
+
+
+class TestRollingOLSMissingData:
+    """Every reported quantity uses one per-target complete-case sample."""
+
+    @pytest.mark.parametrize("ewma_halflife", [None, 2])
+    def test_missing_target_uses_paired_factor_variance(self, ewma_halflife):
+        factor = pd.Series([0.0, 1.0, 2.5186, 4.0], name="factor")
+        factors = factor.to_frame()
+        assets = pd.DataFrame({"asset": 1.5 + 2.47 * factor})
+        assets.loc[1, "asset"] = np.nan
+
+        result = RollingOLS(
+            window=4,
+            min_periods=3,
+            ewma_halflife=ewma_halflife,
+            dtype="float64",
+        ).fit_transform(factors, assets)
+
+        slope = result.get_beta("factor").iloc[-1, 0]
+        assert slope == pytest.approx(2.47, abs=1e-12)
+        if ewma_halflife is None:
+            mismatched = assets["asset"].cov(factor) / factor.var()
+            assert mismatched == pytest.approx(3.29, abs=0.01)
+            assert slope != pytest.approx(mismatched, abs=0.01)
+
+    @pytest.mark.parametrize(
+        "nan_pattern", ["target-only", "regressor-only", "both", "structural-gap"]
+    )
+    @pytest.mark.parametrize("ewma_halflife", [None, 5])
+    def test_nan_patterns_match_scalar_oracle(
+        self,
+        panel_factory,
+        nan_pattern,
+        ewma_halflife,
+    ):
+        targets, factors, controls = panel_factory(
+            n_observations=50,
+            n_targets=2,
+            n_factors=1,
+            n_controls=2,
+            nan_pattern=nan_pattern,
+            seed=31,
+        )
+        result = RollingOLS(
+            window=18,
+            min_periods=10,
+            ewma_halflife=ewma_halflife,
+            dtype="float64",
+        ).fit_transform(factors, targets, controls=controls, return_control_betas=True)
+        expected = oracle_rolling(
+            targets,
+            factors,
+            controls,
+            window=18,
+            min_periods=10,
+            expanding=False,
+            ewma_halflife=ewma_halflife,
+        )
+
+        factor = factors.columns[0]
+        for quantity, getter in {
+            "beta": "get_beta",
+            "intercept": "get_intercept",
+            "residuals": "get_residuals",
+            "r2": "get_r2",
+            "dof": "get_dof",
+            "n_used": "get_n_used",
+        }.items():
+            np.testing.assert_allclose(
+                getattr(result, getter)(factor),
+                expected[quantity][factor],
+                rtol=1e-9,
+                atol=1e-12,
+                equal_nan=True,
+            )
+        for control in controls.columns:
+            np.testing.assert_allclose(
+                result.get_control_beta(factor, control),
+                expected["control_beta"][factor][control],
+                rtol=1e-9,
+                atol=1e-12,
+                equal_nan=True,
+            )
+
+    @pytest.mark.parametrize("ewma_halflife", [None, 3])
+    def test_nan_row_matches_physical_deletion(self, ewma_halflife):
+        rng = np.random.default_rng(32)
+        factors = pd.DataFrame({"factor": rng.normal(size=12)})
+        controls = pd.DataFrame({"control": rng.normal(size=12)})
+        assets = pd.DataFrame({"asset": rng.normal(size=12)})
+        assets.loc[0, "asset"] = np.nan
+
+        with_nan = RollingOLS(
+            window=12,
+            min_periods=8,
+            ewma_halflife=ewma_halflife,
+            dtype="float64",
+        ).fit_transform(factors, assets, controls=controls)
+        deleted = RollingOLS(
+            window=12,
+            min_periods=8,
+            ewma_halflife=ewma_halflife,
+            dtype="float64",
+        ).fit_transform(
+            factors.iloc[1:].reset_index(drop=True),
+            assets.iloc[1:].reset_index(drop=True),
+            controls=controls.iloc[1:].reset_index(drop=True),
+        )
+
+        for getter in ("get_beta", "get_intercept", "get_r2", "get_n_used"):
+            actual = getattr(with_nan, getter)("factor").iloc[-1, 0]
+            expected = getattr(deleted, getter)("factor").iloc[-1, 0]
+            assert actual == pytest.approx(expected, abs=1e-12)
+
+    @pytest.mark.parametrize("ewma_halflife", [None, 4])
+    def test_target_nan_is_isolated_from_other_assets(self, ewma_halflife):
+        rng = np.random.default_rng(33)
+        factors = pd.DataFrame({"factor": rng.normal(size=35)})
+        assets = pd.DataFrame({"affected": rng.normal(size=35), "unaffected": rng.normal(size=35)})
+        assets.loc[12, "affected"] = np.nan
+        options = {
+            "window": 12,
+            "min_periods": 8,
+            "ewma_halflife": ewma_halflife,
+            "dtype": "float64",
+        }
+
+        together = RollingOLS(**options).fit_transform(factors, assets)
+        alone = RollingOLS(**options).fit_transform(factors, assets[["unaffected"]])
+
+        for getter in ("get_beta", "get_intercept", "get_residuals", "get_r2", "get_n_used"):
+            np.testing.assert_array_equal(
+                getattr(together, getter)("factor")["unaffected"],
+                getattr(alone, getter)("factor")["unaffected"],
+            )
+
+    @pytest.mark.parametrize("ewma_halflife", [None, 2])
+    def test_min_periods_counts_complete_rows(self, ewma_halflife):
+        factors = pd.DataFrame({"factor": [0.0, 1.0, 2.0, 4.0, 7.0, 11.0]})
+        assets = pd.DataFrame(
+            {
+                "exact": [1.0, np.nan, 2.0, 5.0, 3.0, 8.0],
+                "short": [1.0, np.nan, np.nan, 5.0, 3.0, 8.0],
+            }
+        )
+
+        result = RollingOLS(
+            window=6,
+            min_periods=4,
+            ewma_halflife=ewma_halflife,
+            dtype="float64",
+        ).fit_transform(factors, assets)
+
+        assert result.get_n_used("factor").loc[4, "exact"] == 4
+        assert np.isfinite(result.get_beta("factor").loc[4, "exact"])
+        assert np.isnan(result.get_beta("factor").loc[4, "short"])
+        assert np.isnan(result.get_n_used("factor").loc[4, "short"])
 
 
 class TestRollingOLSFitTransform:
