@@ -36,6 +36,24 @@ class JointFitResult:
     n_ill_conditioned: int = 0
 
 
+@dataclass(frozen=True)
+class BatchedFitResult:
+    """Outputs from independent per-factor fits sharing one nuisance design."""
+
+    factor_coef: np.ndarray
+    nuisance_coef: np.ndarray
+    nuisance_resid_endpoint: np.ndarray
+    intercept: np.ndarray
+    resid_endpoint: np.ndarray
+    ssr: np.ndarray
+    sst: np.ndarray
+    reduced_ssr: np.ndarray
+    n_used: np.ndarray
+    n_eff: np.ndarray
+    n_singular: int = 0
+    n_ill_conditioned: int = 0
+
+
 def _warn_singular(n: int) -> None:
     """Emit a single aggregated RuntimeWarning for n singular windows."""
     if n <= 0:
@@ -109,21 +127,39 @@ def _solve_batch(XtX: np.ndarray, XtY: np.ndarray, warn_singular: bool = True) -
     return betas
 
 
-def _solve_joint_window(
-    target: np.ndarray,
+def _group_mask_columns(mask: np.ndarray) -> list[np.ndarray]:
+    """Group bitwise-identical boolean columns using packed byte keys."""
+    if mask.ndim != 2:
+        raise ValueError("mask must be two-dimensional")
+    packed = np.packbits(mask, axis=0)
+    groups_by_key: dict[bytes, list[int]] = {}
+    for position in range(mask.shape[1]):
+        groups_by_key.setdefault(packed[:, position].tobytes(), []).append(position)
+
+    groups = [np.asarray(positions, dtype=np.intp) for positions in groups_by_key.values()]
+    for positions in groups:
+        reference = mask[:, positions[0]]
+        assert np.equal(mask[:, positions], reference[:, None]).all(), (
+            "packed mask collision grouped unequal target masks"
+        )
+    return groups
+
+
+def _solve_joint_window_block(
+    targets: np.ndarray,
     design: np.ndarray,
     complete_case: np.ndarray,
     fit_intercept: bool,
     weights: np.ndarray | None,
     penalty: np.ndarray,
     cond_warn_threshold: float,
-) -> tuple[tuple[np.ndarray, float, float, float, int, float] | None, bool]:
-    """Solve one complete-case window for one target."""
+) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, float] | None, bool]:
+    """Solve one complete-case window for a block of identically masked targets."""
     n_used = int(complete_case.sum())
     if n_used == 0:
         return None, False
 
-    complete_target = target[complete_case]
+    complete_targets = targets[complete_case]
     complete_design = design[complete_case]
     if weights is None:
         complete_weights = np.full(n_used, 1.0 / n_used)
@@ -154,40 +190,47 @@ def _solve_joint_window(
 
     sqrt_weights = np.sqrt(complete_weights)
     weighted_design = solve_design * sqrt_weights[:, None]
-    weighted_target = complete_target * sqrt_weights
+    weighted_targets = complete_targets * sqrt_weights[:, None]
     design_gram = weighted_design.T @ weighted_design
     condition_number = float(np.linalg.cond(design_gram))
     if np.any(penalty):
         augmented_design = np.vstack([weighted_design, np.diag(np.sqrt(np.diag(penalty)))])
-        augmented_target = np.concatenate([weighted_target, np.zeros(solve_design.shape[1])])
+        augmented_targets = np.vstack(
+            [weighted_targets, np.zeros((solve_design.shape[1], targets.shape[1]))]
+        )
     else:
         augmented_design = weighted_design
-        augmented_target = weighted_target
+        augmented_targets = weighted_targets
 
     if np.linalg.matrix_rank(augmented_design) < solve_design.shape[1]:
         return None, False
     try:
         q, r = np.linalg.qr(augmented_design, mode="reduced")
-        solve_parameters = np.linalg.solve(r, q.T @ augmented_target)
+        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+            solve_parameters = np.linalg.solve(r, q.T @ augmented_targets)
     except np.linalg.LinAlgError:
         return None, False
     if not np.isfinite(solve_parameters).all():
         return None, False
 
-    parameters = solve_parameters / scales
+    parameters = solve_parameters / scales[:, None]
     if fit_intercept:
-        parameters[0] -= np.sum(parameters[1:] * means[1:])
+        parameters[0] -= means[1:] @ parameters[1:]
 
-    residuals = complete_target - complete_design @ parameters
-    ssr = float(np.sum(complete_weights * residuals**2))
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        residuals = complete_targets - complete_design @ parameters
+    ssr = np.sum(complete_weights[:, None] * residuals**2, axis=0)
     if fit_intercept:
-        target_mean = np.sum(complete_weights * complete_target)
-        sst = float(np.sum(complete_weights * (complete_target - target_mean) ** 2))
+        target_means = np.sum(complete_weights[:, None] * complete_targets, axis=0)
+        sst = np.sum(
+            complete_weights[:, None] * (complete_targets - target_means) ** 2,
+            axis=0,
+        )
     else:
-        sst = float(np.sum(complete_weights * complete_target**2))
-    endpoint_residual = np.nan
+        sst = np.sum(complete_weights[:, None] * complete_targets**2, axis=0)
+    endpoint_residual = np.full(targets.shape[1], np.nan)
     if complete_case[-1]:
-        endpoint_residual = float(target[-1] - design[-1] @ parameters)
+        endpoint_residual = targets[-1] - design[-1] @ parameters
     n_eff = float(1.0 / np.sum(complete_weights**2))
     result = parameters, endpoint_residual, ssr, sst, n_used, n_eff
     return result, condition_number > cond_warn_threshold
@@ -271,23 +314,60 @@ def rolling_joint_solve(
     n_used = np.full((n_observations, n_targets), np.nan)
     n_eff = np.full((n_observations, n_targets), np.nan)
 
-    def store(
+    def store_block(
         endpoint: int,
-        target_position: int,
-        solved: tuple[np.ndarray, float, float, float, int, float],
+        target_positions: np.ndarray,
+        solved: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, float],
     ) -> None:
         parameters, residual, window_ssr, window_sst, window_n_used, window_n_eff = solved
         if fit_intercept:
-            intercept[endpoint, target_position] = parameters[0]
-            coef[endpoint, :, target_position] = parameters[1:]
+            intercept[endpoint, target_positions] = parameters[0]
+            coef[endpoint][:, target_positions] = parameters[1:]
         else:
-            intercept[endpoint, target_position] = 0.0
-            coef[endpoint, :, target_position] = parameters
-        resid_endpoint[endpoint, target_position] = residual
-        ssr[endpoint, target_position] = window_ssr
-        sst[endpoint, target_position] = window_sst
-        n_used[endpoint, target_position] = window_n_used
-        n_eff[endpoint, target_position] = window_n_eff
+            intercept[endpoint, target_positions] = 0.0
+            coef[endpoint][:, target_positions] = parameters
+        resid_endpoint[endpoint, target_positions] = residual
+        ssr[endpoint, target_positions] = window_ssr
+        sst[endpoint, target_positions] = window_sst
+        n_used[endpoint, target_positions] = window_n_used
+        n_eff[endpoint, target_positions] = window_n_eff
+
+    def solve_grouped_endpoint(
+        endpoint: int,
+        start: int,
+        target_positions: np.ndarray,
+        endpoint_weights: np.ndarray | None,
+    ) -> tuple[int, int]:
+        """Solve one endpoint once per exact target-validity pattern."""
+        if target_positions.size == 0:
+            return 0, 0
+        window_targets = target_values[start : endpoint + 1, target_positions]
+        window_design = design[start : endpoint + 1]
+        target_validity = np.isfinite(window_targets)
+        design_validity = np.isfinite(window_design).all(axis=1)
+        singular_count = 0
+        ill_conditioned_count = 0
+        for local_positions in _group_mask_columns(target_validity):
+            grouped_targets = target_positions[local_positions]
+            complete_case = target_validity[:, local_positions[0]] & design_validity
+            if int(complete_case.sum()) < min_periods:
+                continue
+            solved, ill_conditioned = _solve_joint_window_block(
+                window_targets[:, local_positions],
+                window_design,
+                complete_case,
+                fit_intercept,
+                endpoint_weights,
+                penalty_matrix,
+                cond_warn_threshold,
+            )
+            group_size = grouped_targets.size
+            ill_conditioned_count += int(ill_conditioned) * group_size
+            if solved is None:
+                singular_count += group_size
+            else:
+                store_block(endpoint, grouped_targets, solved)
+        return singular_count, ill_conditioned_count
 
     vectorizable_rolling = not expanding and np.isfinite(design).all() and n_observations >= window
     n_singular = 0
@@ -399,73 +479,39 @@ def rolling_joint_solve(
             endpoint_weights = (
                 None if supplied_weights is None else supplied_weights[-(endpoint + 1) :]
             )
-            for target_position in range(n_targets):
-                complete_case = np.isfinite(target_values[: endpoint + 1, target_position])
-                if int(complete_case.sum()) < min_periods:
-                    continue
-                solved, ill_conditioned = _solve_joint_window(
-                    target_values[: endpoint + 1, target_position],
-                    design[: endpoint + 1],
-                    complete_case,
-                    fit_intercept,
-                    endpoint_weights,
-                    penalty_matrix,
-                    cond_warn_threshold,
-                )
-                n_ill_conditioned += int(ill_conditioned)
-                if solved is None:
-                    n_singular += 1
-                else:
-                    store(endpoint, target_position, solved)
+            singular, ill_conditioned = solve_grouped_endpoint(
+                endpoint,
+                0,
+                np.arange(n_targets),
+                endpoint_weights,
+            )
+            n_singular += singular
+            n_ill_conditioned += ill_conditioned
         for endpoint in range(window - 1, n_observations):
             start = endpoint - window + 1
             endpoint_weights = supplied_weights
-            window_design = design[start : endpoint + 1]
-            for target_position in dirty_target_positions:
-                window_target = target_values[start : endpoint + 1, target_position]
-                complete_case = np.isfinite(window_target)
-                if int(complete_case.sum()) < min_periods:
-                    continue
-                solved, ill_conditioned = _solve_joint_window(
-                    window_target,
-                    window_design,
-                    complete_case,
-                    fit_intercept,
-                    endpoint_weights,
-                    penalty_matrix,
-                    cond_warn_threshold,
-                )
-                n_ill_conditioned += int(ill_conditioned)
-                if solved is None:
-                    n_singular += 1
-                else:
-                    store(endpoint, target_position, solved)
+            singular, ill_conditioned = solve_grouped_endpoint(
+                endpoint,
+                start,
+                dirty_target_positions,
+                endpoint_weights,
+            )
+            n_singular += singular
+            n_ill_conditioned += ill_conditioned
     else:
         for endpoint in range(min_periods - 1, n_observations):
             start = 0 if expanding else max(0, endpoint - window + 1)
             endpoint_weights = (
                 None if supplied_weights is None else supplied_weights[-(endpoint - start + 1) :]
             )
-            for target_position in range(n_targets):
-                window_target = target_values[start : endpoint + 1, target_position]
-                window_design = design[start : endpoint + 1]
-                complete_case = np.isfinite(window_target) & np.isfinite(window_design).all(axis=1)
-                if int(complete_case.sum()) < min_periods:
-                    continue
-                solved, ill_conditioned = _solve_joint_window(
-                    window_target,
-                    window_design,
-                    complete_case,
-                    fit_intercept,
-                    endpoint_weights,
-                    penalty_matrix,
-                    cond_warn_threshold,
-                )
-                n_ill_conditioned += int(ill_conditioned)
-                if solved is None:
-                    n_singular += 1
-                else:
-                    store(endpoint, target_position, solved)
+            singular, ill_conditioned = solve_grouped_endpoint(
+                endpoint,
+                start,
+                np.arange(n_targets),
+                endpoint_weights,
+            )
+            n_singular += singular
+            n_ill_conditioned += ill_conditioned
 
     if warn_singular:
         _warn_singular(n_singular)
@@ -476,6 +522,297 @@ def rolling_joint_solve(
         resid_endpoint=resid_endpoint,
         ssr=ssr,
         sst=sst,
+        n_used=n_used,
+        n_eff=n_eff,
+        n_singular=n_singular,
+        n_ill_conditioned=n_ill_conditioned,
+    )
+
+
+def rolling_fwl_solve(
+    y: pd.DataFrame,
+    factors: pd.DataFrame,
+    controls: pd.DataFrame | None,
+    window: int,
+    min_periods: int,
+    expanding: bool,
+    fit_intercept: bool = True,
+    weights: np.ndarray | None = None,
+    warn_singular: bool = True,
+    cond_warn_threshold: float = 1e10,
+) -> BatchedFitResult:
+    """Fit independent factors by exact within-window FWL projection.
+
+    Targets and factors are grouped by bitwise-identical validity masks. For
+    each pair of pattern groups, one nuisance QR residualizes every factor and
+    target on the same complete-case window. Factor-target cross-products are
+    then computed by one matrix multiplication.
+    """
+    assert y.index.equals(factors.index), "y and factors must have identical indexes"
+    if controls is not None:
+        assert y.index.equals(controls.index), "y and controls must have identical indexes"
+    if window <= 0 or min_periods <= 0:
+        raise ValueError("window and min_periods must be positive")
+    if not expanding and min_periods > window:
+        raise ValueError("min_periods cannot exceed window")
+    if weights is not None and expanding:
+        raise ValueError("weights are not supported with expanding=True")
+    if not np.isfinite(cond_warn_threshold) or cond_warn_threshold <= 0:
+        raise ValueError("cond_warn_threshold must be finite and positive")
+
+    canonical_target_order = np.asarray(
+        sorted(
+            range(y.shape[1]),
+            key=lambda position: (
+                type(y.columns[position]).__name__,
+                repr(y.columns[position]),
+            ),
+        ),
+        dtype=np.intp,
+    )
+    target_values = y.iloc[:, canonical_target_order].to_numpy(dtype=np.float64)
+    factor_values = factors.to_numpy(dtype=np.float64)
+    control_values = (
+        np.empty((len(y), 0), dtype=np.float64)
+        if controls is None
+        else controls.to_numpy(dtype=np.float64)
+    )
+    nuisance_values = (
+        np.column_stack([np.ones(len(y)), control_values]) if fit_intercept else control_values
+    )
+    n_observations, n_targets = target_values.shape
+    n_factors = factor_values.shape[1]
+    n_controls = control_values.shape[1]
+
+    supplied_weights = None
+    if weights is not None:
+        supplied_weights = np.asarray(weights, dtype=np.float64)
+        if supplied_weights.shape != (window,):
+            raise ValueError(f"weights must have shape ({window},)")
+        if not np.isfinite(supplied_weights).all() or (supplied_weights < 0).any():
+            raise ValueError("weights must be finite and non-negative")
+        if supplied_weights.sum() <= 0:
+            raise ValueError("weights must have positive sum")
+
+    shape = (n_observations, n_factors, n_targets)
+    factor_coef = np.full(shape, np.nan)
+    intercept = np.full(shape, np.nan)
+    resid_endpoint = np.full(shape, np.nan)
+    ssr = np.full(shape, np.nan)
+    sst = np.full(shape, np.nan)
+    reduced_ssr = np.full(shape, np.nan)
+    n_used = np.full(shape, np.nan)
+    n_eff = np.full(shape, np.nan)
+    nuisance_coef = np.full((n_observations, n_factors, n_controls, n_targets), np.nan)
+    nuisance_resid_endpoint = np.full((n_observations, n_targets), np.nan)
+    n_singular = 0
+    n_ill_conditioned = 0
+
+    for endpoint in range(min_periods - 1, n_observations):
+        start = 0 if expanding else max(0, endpoint - window + 1)
+        window_targets = target_values[start : endpoint + 1]
+        window_factors = factor_values[start : endpoint + 1]
+        window_nuisance = nuisance_values[start : endpoint + 1]
+        target_validity = np.isfinite(window_targets)
+        factor_validity = np.isfinite(window_factors)
+        factor_groups = _group_mask_columns(factor_validity)
+        nuisance_validity = np.isfinite(window_nuisance).all(axis=1)
+        endpoint_weights = (
+            None if supplied_weights is None else supplied_weights[-(endpoint - start + 1) :]
+        )
+
+        for target_positions in _group_mask_columns(target_validity):
+            target_mask = target_validity[:, target_positions[0]]
+            target_output_positions = canonical_target_order[target_positions]
+            for factor_positions in factor_groups:
+                complete_case = (
+                    target_mask & factor_validity[:, factor_positions[0]] & nuisance_validity
+                )
+                observations_used = int(complete_case.sum())
+                if observations_used < min_periods:
+                    continue
+
+                complete_targets = window_targets[complete_case][:, target_positions]
+                complete_factors = window_factors[complete_case][:, factor_positions]
+                complete_nuisance = window_nuisance[complete_case]
+                if endpoint_weights is None:
+                    complete_weights = np.full(observations_used, 1.0 / observations_used)
+                else:
+                    complete_weights = endpoint_weights[complete_case]
+                    weight_sum = complete_weights.sum()
+                    if weight_sum <= 0:
+                        continue
+                    complete_weights = complete_weights / weight_sum
+                sqrt_weights = np.sqrt(complete_weights)
+                weighted_targets = complete_targets * sqrt_weights[:, None]
+                weighted_factors = complete_factors * sqrt_weights[:, None]
+                weighted_nuisance = complete_nuisance * sqrt_weights[:, None]
+
+                if weighted_nuisance.shape[1]:
+                    if np.linalg.matrix_rank(weighted_nuisance) < weighted_nuisance.shape[1]:
+                        n_singular += factor_positions.size * target_positions.size
+                        continue
+                    try:
+                        nuisance_q, nuisance_r = np.linalg.qr(weighted_nuisance, mode="reduced")
+                        projected_targets = np.sum(
+                            nuisance_q[:, :, None] * weighted_targets[:, None, :],
+                            axis=0,
+                        )
+                        projected_factors = np.sum(
+                            nuisance_q[:, :, None] * weighted_factors[:, None, :],
+                            axis=0,
+                        )
+                        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                            target_residuals = weighted_targets - nuisance_q @ projected_targets
+                            factor_residuals = weighted_factors - nuisance_q @ projected_factors
+                        nuisance_target_coef = np.linalg.solve(nuisance_r, projected_targets)
+                        nuisance_factor_coef = np.linalg.solve(nuisance_r, projected_factors)
+                    except np.linalg.LinAlgError:
+                        n_singular += factor_positions.size * target_positions.size
+                        continue
+                else:
+                    target_residuals = weighted_targets
+                    factor_residuals = weighted_factors
+                    nuisance_target_coef = np.empty((0, target_positions.size))
+                    nuisance_factor_coef = np.empty((0, factor_positions.size))
+
+                nuisance_complete_case = target_mask & nuisance_validity
+                if complete_case[-1] and np.array_equal(complete_case, nuisance_complete_case):
+                    nuisance_endpoint_fit = np.zeros(target_positions.size)
+                    if weighted_nuisance.shape[1]:
+                        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                            nuisance_endpoint_fit = complete_nuisance[-1] @ nuisance_target_coef
+                    nuisance_resid_endpoint[endpoint, target_output_positions] = (
+                        window_targets[-1, target_positions] - nuisance_endpoint_fit
+                    )
+
+                n_group_factors = factor_positions.size
+                n_nuisance = weighted_nuisance.shape[1]
+                design_grams = np.zeros(
+                    (n_group_factors, n_nuisance + 1, n_nuisance + 1),
+                    dtype=np.float64,
+                )
+                if n_nuisance:
+                    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                        nuisance_gram = weighted_nuisance.T @ weighted_nuisance
+                        nuisance_factor_cross = weighted_nuisance.T @ weighted_factors
+                    design_grams[:, :n_nuisance, :n_nuisance] = nuisance_gram
+                    design_grams[:, :n_nuisance, -1] = nuisance_factor_cross.T
+                    design_grams[:, -1, :n_nuisance] = nuisance_factor_cross.T
+                design_grams[:, -1, -1] = np.sum(weighted_factors**2, axis=0)
+                condition_numbers = np.linalg.cond(design_grams)
+                rank_condition_limit = (
+                    1.0 / (max(observations_used, n_nuisance + 1) * np.finfo(np.float64).eps)
+                ) ** 2
+                valid_factors = np.isfinite(condition_numbers) & (
+                    condition_numbers < rank_condition_limit
+                )
+                n_singular += int((~valid_factors).sum()) * target_positions.size
+                n_ill_conditioned += (
+                    int((valid_factors & (condition_numbers > cond_warn_threshold)).sum())
+                    * target_positions.size
+                )
+                if not valid_factors.any():
+                    continue
+
+                # One GEMM computes every factor-target cross-product in this
+                # exact pair of validity-pattern groups.
+                if target_positions.size == 1:
+                    # A two-column RHS keeps the BLAS reduction identical when
+                    # a target moves between a singleton and a shared group.
+                    duplicated_targets = np.repeat(target_residuals, 2, axis=1)
+                    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                        cross_products = (factor_residuals.T @ duplicated_targets)[:, :1]
+                else:
+                    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+                        cross_products = factor_residuals.T @ target_residuals
+                denominators = np.sum(factor_residuals**2, axis=0)
+                betas = np.divide(
+                    cross_products,
+                    denominators[:, None],
+                    out=np.full_like(cross_products, np.nan),
+                    where=valid_factors[:, None] & (denominators[:, None] > 0),
+                )
+                full_nuisance_coef = (
+                    nuisance_target_coef[:, None, :]
+                    - nuisance_factor_coef[:, :, None] * betas[None, :, :]
+                )
+                target_residual_series = np.ascontiguousarray(target_residuals.T)
+                group_reduced_ssr = np.sum(target_residual_series**2, axis=1)
+                group_ssr = group_reduced_ssr[None, :] - betas**2 * denominators[:, None]
+                if fit_intercept:
+                    target_means = np.sum(
+                        complete_weights[:, None] * complete_targets,
+                        axis=0,
+                    )
+                    group_sst = np.sum(
+                        complete_weights[:, None] * (complete_targets - target_means) ** 2,
+                        axis=0,
+                    )
+                else:
+                    group_sst = np.sum(
+                        complete_weights[:, None] * complete_targets**2,
+                        axis=0,
+                    )
+
+                factor_index, target_index = np.ix_(factor_positions, target_output_positions)
+                valid_matrix = np.broadcast_to(
+                    valid_factors[:, None],
+                    (factor_positions.size, target_positions.size),
+                )
+                factor_coef[endpoint][factor_index, target_index] = betas
+                if fit_intercept:
+                    intercept[endpoint][factor_index, target_index] = full_nuisance_coef[0]
+                    control_offset = 1
+                else:
+                    intercept_values = np.where(valid_matrix, 0.0, np.nan)
+                    intercept[endpoint][factor_index, target_index] = intercept_values
+                    control_offset = 0
+                if n_controls:
+                    control_values_block = full_nuisance_coef[
+                        control_offset : control_offset + n_controls
+                    ].transpose(1, 0, 2)
+                    nuisance_coef[endpoint][
+                        factor_positions[:, None, None],
+                        np.arange(n_controls)[None, :, None],
+                        target_output_positions[None, None, :],
+                    ] = control_values_block
+
+                metric_valid = np.where(valid_matrix, 1.0, np.nan)
+                ssr[endpoint][factor_index, target_index] = group_ssr * metric_valid
+                sst[endpoint][factor_index, target_index] = group_sst[None, :] * metric_valid
+                reduced_ssr[endpoint][factor_index, target_index] = (
+                    group_reduced_ssr[None, :] * metric_valid
+                )
+                n_used[endpoint][factor_index, target_index] = observations_used * metric_valid
+                effective_count = 1.0 / np.sum(complete_weights**2)
+                n_eff[endpoint][factor_index, target_index] = effective_count * metric_valid
+
+                if complete_case[-1]:
+                    endpoint_targets = window_targets[-1, target_positions]
+                    endpoint_factors = window_factors[-1, factor_positions]
+                    fitted_endpoint = endpoint_factors[:, None] * betas
+                    if n_nuisance:
+                        fitted_endpoint += np.einsum(
+                            "n,nft->ft",
+                            complete_nuisance[-1],
+                            full_nuisance_coef,
+                        )
+                    endpoint_residuals = endpoint_targets[None, :] - fitted_endpoint
+                    resid_endpoint[endpoint][factor_index, target_index] = endpoint_residuals
+
+    if warn_singular:
+        _warn_singular(n_singular)
+        _warn_ill_conditioned(n_ill_conditioned, cond_warn_threshold)
+    return BatchedFitResult(
+        factor_coef=factor_coef,
+        nuisance_coef=nuisance_coef,
+        nuisance_resid_endpoint=nuisance_resid_endpoint,
+        intercept=intercept,
+        resid_endpoint=resid_endpoint,
+        ssr=ssr,
+        sst=sst,
+        reduced_ssr=reduced_ssr,
         n_used=n_used,
         n_eff=n_eff,
         n_singular=n_singular,

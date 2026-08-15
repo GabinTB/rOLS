@@ -27,9 +27,11 @@ import numpy as np
 import pandas as pd
 
 from .estimators import (
+    BatchedFitResult,
     JointFitResult,
     _warn_ill_conditioned,
     _warn_singular,
+    rolling_fwl_solve,
     rolling_joint_solve,
 )
 from .results import RollingOLSResult
@@ -409,16 +411,37 @@ class RollingOLS:
         if self._factors is None:
             raise RuntimeError("Fitted factors are unavailable. Call fit() again.")
 
-        # Preserve the controls-only residual accessor using a separate direct
-        # current-window model. It is not used to estimate factor coefficients.
-        if self._controls_fitted is not None:
-            controls_only_fit = self._solve_targets(
-                assets,
-                self._controls_fitted,
-                penalty=self._penalty_matrix(len(self._control_cols), n_factors=0),
+        fwl_fit: BatchedFitResult | None = None
+        if self.lambda_ == 0:
+            fwl_fit = rolling_fwl_solve(
+                y=assets,
+                factors=self._factors,
+                controls=self._controls_fitted,
+                window=self.window,
+                min_periods=self.min_periods,
+                expanding=self.expanding,
+                fit_intercept=self.fit_intercept,
+                weights=self._weights(),
+                warn_singular=self.warn_singular,
+                cond_warn_threshold=self.cond_warn_threshold,
             )
+
+        # Preserve the controls-only residual accessor using a separate direct
+        # current-window model when factor missingness prevents sharing the FWL
+        # nuisance projection. It is not used to estimate factor coefficients.
+        controls_only_fit: JointFitResult | None = None
+        if self._controls_fitted is not None:
+            if fwl_fit is not None and np.isfinite(self._factors.to_numpy()).all():
+                controls_only_residuals = fwl_fit.nuisance_resid_endpoint
+            else:
+                controls_only_fit = self._solve_targets(
+                    assets,
+                    self._controls_fitted,
+                    penalty=self._penalty_matrix(len(self._control_cols), n_factors=0),
+                )
+                controls_only_residuals = controls_only_fit.resid_endpoint
             asset_resids = pd.DataFrame(
-                controls_only_fit.resid_endpoint,
+                controls_only_residuals,
                 index=assets.index,
                 columns=assets.columns,
             )
@@ -435,60 +458,95 @@ class RollingOLS:
             expanding=self.expanding,
             hac_lags=self.hac_lags,
         )
+        result._path = "fwl" if self.lambda_ == 0 else "joint"
 
         # Controls-only endpoint residuals, retained for the existing accessor.
         result._factor_adjusted_returns = asset_resids
 
         direct_control_betas: dict[str, dict[str, pd.DataFrame]] = {}
-        for fac in self._factor_cols:
+        reduced_fit_cache: dict[bytes, JointFitResult] = {}
+        if controls_only_fit is not None:
+            all_finite = np.ones(len(assets), dtype=bool)
+            reduced_fit_cache[np.packbits(all_finite).tobytes()] = controls_only_fit
+        for factor_position, fac in enumerate(self._factor_cols):
             design_parts = []
             if self._controls_fitted is not None:
                 design_parts.append(self._controls_fitted)
             design_parts.append(self._factors[[fac]])
             design = pd.concat(design_parts, axis=1)
-            fit = self._solve_targets(
-                assets,
-                design,
-                penalty=self._penalty_matrix(len(self._control_cols), n_factors=1),
-            )
+            if fwl_fit is None:
+                fit = self._solve_targets(
+                    assets,
+                    design,
+                    penalty=self._penalty_matrix(len(self._control_cols), n_factors=1),
+                )
+                beta_values = fit.coef[:, -1, :]
+                intercept_values = fit.intercept
+                residual_values = fit.resid_endpoint
+                n_used_values = fit.n_used
+                n_eff_values = fit.n_eff
+                fit_ssr = fit.ssr
+                fit_sst = fit.sst
+            else:
+                beta_values = fwl_fit.factor_coef[:, factor_position, :]
+                intercept_values = fwl_fit.intercept[:, factor_position, :]
+                residual_values = fwl_fit.resid_endpoint[:, factor_position, :]
+                n_used_values = fwl_fit.n_used[:, factor_position, :]
+                n_eff_values = fwl_fit.n_eff[:, factor_position, :]
+                fit_ssr = fwl_fit.ssr[:, factor_position, :]
+                fit_sst = fwl_fit.sst[:, factor_position, :]
 
-            beta = pd.DataFrame(fit.coef[:, -1, :], index=assets.index, columns=assets.columns)
-            intercept = pd.DataFrame(fit.intercept, index=assets.index, columns=assets.columns)
-            residuals = pd.DataFrame(fit.resid_endpoint, index=assets.index, columns=assets.columns)
-            n_used = pd.DataFrame(fit.n_used, index=assets.index, columns=assets.columns)
-            residual_dof = fit.n_eff - design.shape[1] - int(self.fit_intercept)
+            beta = pd.DataFrame(beta_values, index=assets.index, columns=assets.columns)
+            intercept = pd.DataFrame(
+                intercept_values,
+                index=assets.index,
+                columns=assets.columns,
+            )
+            residuals = pd.DataFrame(
+                residual_values,
+                index=assets.index,
+                columns=assets.columns,
+            )
+            n_used = pd.DataFrame(n_used_values, index=assets.index, columns=assets.columns)
+            residual_dof = n_eff_values - design.shape[1] - int(self.fit_intercept)
             dof = pd.DataFrame(residual_dof, index=assets.index, columns=assets.columns)
             r2_values = np.divide(
-                fit.ssr,
-                fit.sst,
-                out=np.full_like(fit.ssr, np.nan),
-                where=fit.sst > self.denom_tol,
+                fit_ssr,
+                fit_sst,
+                out=np.full_like(fit_ssr, np.nan),
+                where=fit_sst > self.denom_tol,
             )
             r2_values = 1.0 - r2_values
 
-            if self._controls_fitted is None:
-                reduced_ssr = fit.sst
+            if fwl_fit is not None:
+                reduced_ssr = fwl_fit.reduced_ssr[:, factor_position, :]
+            elif self._controls_fitted is None:
+                reduced_ssr = fit_sst
             else:
                 factor_is_finite = pd.Series(
                     np.isfinite(self._factors[fac].to_numpy()),
                     index=assets.index,
                 )
-                reduced_targets = assets.where(factor_is_finite, axis=0)
-                reduced_fit = self._solve_targets(
-                    reduced_targets,
-                    self._controls_fitted,
-                    penalty=self._penalty_matrix(len(self._control_cols), n_factors=0),
-                )
+                factor_mask_key = np.packbits(factor_is_finite.to_numpy()).tobytes()
+                reduced_fit = reduced_fit_cache.get(factor_mask_key)
+                if reduced_fit is None:
+                    reduced_targets = assets.where(factor_is_finite, axis=0)
+                    reduced_fit = self._solve_targets(
+                        reduced_targets,
+                        self._controls_fitted,
+                        penalty=self._penalty_matrix(len(self._control_cols), n_factors=0),
+                    )
+                    reduced_fit_cache[factor_mask_key] = reduced_fit
                 reduced_ssr = reduced_fit.ssr
             partial_r2_values = np.divide(
-                reduced_ssr - fit.ssr,
+                reduced_ssr - fit_ssr,
                 reduced_ssr,
-                out=np.full_like(fit.ssr, np.nan),
+                out=np.full_like(fit_ssr, np.nan),
                 where=reduced_ssr > self.denom_tol,
             )
 
             if self.adj_r2:
-                numerator_dof = fit.n_eff - int(self.fit_intercept)
+                numerator_dof = n_eff_values - int(self.fit_intercept)
                 adjustment = np.divide(
                     numerator_dof,
                     residual_dof,
@@ -519,9 +577,13 @@ class RollingOLS:
             result._n_used[fac] = n_used
             result._factor_values[fac] = factor
             if return_control_betas and self._controls_fitted is not None:
+                if fwl_fit is None:
+                    control_coef = fit.coef
+                else:
+                    control_coef = fwl_fit.nuisance_coef[:, factor_position, :, :]
                 direct_control_betas[fac] = {
                     control: pd.DataFrame(
-                        fit.coef[:, control_position, :],
+                        control_coef[:, control_position, :],
                         index=assets.index,
                         columns=assets.columns,
                     )
