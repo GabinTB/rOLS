@@ -93,6 +93,7 @@ for f in factors:
 | `hac_lags` | `None` | Newey-West lags for HAC SE. `None` disables HAC |
 | `dtype` | `"float32"` | DataFrame storage dtype (see note below). Use `"float64"` for higher precision |
 | `asset_chunk_size` | `100` | Controls peak memory during residualization |
+| `cache_size` | `1` | Maximum factors retained in each on-demand result cache |
 | `warn_singular` | `True` | Warn (RuntimeWarning) on singular windows. Set `False` to suppress |
 
 ---
@@ -162,6 +163,28 @@ result.get_control_beta("f1", "ctrl1")  # requires return_control_betas=True
 
 result.get_factor_mimicking_returns("f1")    # Series (T,) — cross-sectional λ_t
 result.get_all_factor_mimicking_returns()    # DataFrame (T x K)
+```
+
+`transform()` materialises betas, intercepts, and observation counts. Signals,
+R², residuals, standard errors, and t-statistics are computed when requested.
+The residual, R², and standard-error caches retain at most `cache_size` factors.
+
+Every factor getter accepts an optional target subset:
+
+```python
+result.get_beta("f1", assets=["AAPL", "MSFT"])
+result.get_se("f1", assets=["AAPL", "MSFT"])
+```
+
+For whole-panel work, iterate one factor at a time so inference frames can be
+released as the loop advances:
+
+```python
+for factor, beta in result.iter_beta():
+    process(factor, beta)
+
+for factor, se in result.iter_se():
+    process(factor, se)
 ```
 
 `get_factor_adjusted_returns()` returns asset returns with only the **controls**
@@ -285,7 +308,22 @@ timing regressions, spanning tests, factor covariance estimation — consume the
 
 **Stride tricks** — the rolling window matrix operations use `numpy.lib.stride_tricks.as_strided` to build zero-copy sliding window views, avoiding explicit loops over time for the fixed-window case.
 
-**Memory** — asset residualization is chunked (`asset_chunk_size`) to bound peak memory when the number of targets is large. Reduce this value if you hit memory limits.
+**Memory.** Asset residualization is chunked (`asset_chunk_size`) to bound peak memory when the number of targets is large. Reduce this value if you hit memory limits. Before fitting, inspect the persistent and on-demand footprint from the input shapes:
+
+```python
+memory = RollingOLS(window=252, cache_size=1).estimate_memory(
+    targets=df[targets],
+    factors=df[factors],
+    controls=df[controls],
+)
+print(memory["total"])
+print(memory["note"])
+```
+
+The estimate includes the bounded cache cost. Missing values in a factor split
+its sufficient statistics into factor-specific complete-case patterns and may
+increase their memory use. `iter_beta()` and `iter_se()` are the supported way
+to process every factor without retaining all derived frames at once.
 
 **Precision (`dtype`)** — `dtype` controls the storage precision of the input and intermediate pandas DataFrames only. Internal matrix operations (gram matrix accumulation and the linear solve) always run in **float64** regardless of this setting, because `np.linalg.solve` loses accuracy in float32 for ill-conditioned windows. So `float32` reduces DataFrame memory but does not change the numerical precision of the regression itself.
 

@@ -40,18 +40,34 @@ class JointFitResult:
 class BatchedFitResult:
     """Outputs from independent per-factor fits sharing one nuisance design."""
 
-    factor_coef: np.ndarray
-    nuisance_coef: np.ndarray
-    nuisance_resid_endpoint: np.ndarray
-    intercept: np.ndarray
-    resid_endpoint: np.ndarray
-    ssr: np.ndarray
-    sst: np.ndarray
-    reduced_ssr: np.ndarray
-    n_used: np.ndarray
-    n_eff: np.ndarray
+    factor_coef: np.ndarray | None
+    intercept: np.ndarray | None
+    n_used: np.ndarray | None
+    sufficient_statistics: tuple[PatternSufficientStatistics, ...]
+    nuisance_coef: np.ndarray | None = None
+    nuisance_resid_endpoint: np.ndarray | None = None
+    resid_endpoint: np.ndarray | None = None
+    ssr: np.ndarray | None = None
+    sst: np.ndarray | None = None
+    reduced_ssr: np.ndarray | None = None
+    n_eff: np.ndarray | None = None
     n_singular: int = 0
     n_ill_conditioned: int = 0
+
+
+@dataclass(frozen=True)
+class PatternSufficientStatistics:
+    """FWL statistics for one endpoint and exact complete-case pattern."""
+
+    endpoint: int
+    factor_positions: np.ndarray
+    target_positions: np.ndarray
+    cross_products: np.ndarray
+    denominators: np.ndarray
+    reduced_ssr: np.ndarray
+    raw_sst: np.ndarray
+    n_used: int
+    n_eff: float
 
 
 def _warn_singular(n: int) -> None:
@@ -145,6 +161,15 @@ def _group_mask_columns(mask: np.ndarray) -> list[np.ndarray]:
     return groups
 
 
+def _effective_sample_size(weights: np.ndarray) -> float:
+    """Scale-invariant Kish effective sample size for positive weight mass."""
+    weight_mass = float(np.sum(weights))
+    squared_mass = float(np.sum(weights**2))
+    if weight_mass <= 0 or squared_mass <= 0:
+        return np.nan
+    return weight_mass**2 / squared_mass
+
+
 def _solve_joint_window_block(
     targets: np.ndarray,
     design: np.ndarray,
@@ -231,7 +256,7 @@ def _solve_joint_window_block(
     endpoint_residual = np.full(targets.shape[1], np.nan)
     if complete_case[-1]:
         endpoint_residual = targets[-1] - design[-1] @ parameters
-    n_eff = float(1.0 / np.sum(complete_weights**2))
+    n_eff = _effective_sample_size(complete_weights)
     result = parameters, endpoint_residual, ssr, sst, n_used, n_eff
     return result, condition_number > cond_warn_threshold
 
@@ -472,7 +497,7 @@ def rolling_joint_solve(
             ssr[endpoints, target_position] = window_ssr[:, local_position]
             sst[endpoints, target_position] = window_sst[:, local_position]
             n_used[endpoints, target_position] = window
-            n_eff[endpoints, target_position] = 1.0 / np.sum(window_weights**2)
+            n_eff[endpoints, target_position] = _effective_sample_size(window_weights)
 
         early_stop = min(window - 1, n_observations)
         for endpoint in range(min_periods - 1, early_stop):
@@ -540,6 +565,9 @@ def rolling_fwl_solve(
     weights: np.ndarray | None = None,
     warn_singular: bool = True,
     cond_warn_threshold: float = 1e10,
+    params_only: bool = False,
+    return_nuisance_coef: bool = True,
+    residuals_only: bool = False,
 ) -> BatchedFitResult:
     """Fit independent factors by exact within-window FWL projection.
 
@@ -595,16 +623,21 @@ def rolling_fwl_solve(
             raise ValueError("weights must have positive sum")
 
     shape = (n_observations, n_factors, n_targets)
-    factor_coef = np.full(shape, np.nan)
-    intercept = np.full(shape, np.nan)
-    resid_endpoint = np.full(shape, np.nan)
-    ssr = np.full(shape, np.nan)
-    sst = np.full(shape, np.nan)
-    reduced_ssr = np.full(shape, np.nan)
-    n_used = np.full(shape, np.nan)
-    n_eff = np.full(shape, np.nan)
-    nuisance_coef = np.full((n_observations, n_factors, n_controls, n_targets), np.nan)
-    nuisance_resid_endpoint = np.full((n_observations, n_targets), np.nan)
+    factor_coef = None if residuals_only else np.full(shape, np.nan)
+    intercept = None if residuals_only else np.full(shape, np.nan)
+    n_used = None if residuals_only or params_only else np.full(shape, np.nan)
+    resid_endpoint = np.full(shape, np.nan) if residuals_only or not params_only else None
+    ssr = None if params_only else np.full(shape, np.nan)
+    sst = None if params_only else np.full(shape, np.nan)
+    reduced_ssr = None if params_only else np.full(shape, np.nan)
+    n_eff = None if params_only else np.full(shape, np.nan)
+    nuisance_coef = (
+        np.full((n_observations, n_factors, n_controls, n_targets), np.nan)
+        if return_nuisance_coef
+        else None
+    )
+    nuisance_resid_endpoint = None if params_only else np.full((n_observations, n_targets), np.nan)
+    sufficient_statistics: list[PatternSufficientStatistics] = []
     n_singular = 0
     n_ill_conditioned = 0
 
@@ -677,7 +710,11 @@ def rolling_fwl_solve(
                     nuisance_factor_coef = np.empty((0, factor_positions.size))
 
                 nuisance_complete_case = target_mask & nuisance_validity
-                if complete_case[-1] and np.array_equal(complete_case, nuisance_complete_case):
+                if (
+                    nuisance_resid_endpoint is not None
+                    and complete_case[-1]
+                    and np.array_equal(complete_case, nuisance_complete_case)
+                ):
                     nuisance_endpoint_fit = np.zeros(target_positions.size)
                     if weighted_nuisance.shape[1]:
                         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
@@ -760,15 +797,15 @@ def rolling_fwl_solve(
                     valid_factors[:, None],
                     (factor_positions.size, target_positions.size),
                 )
-                factor_coef[endpoint][factor_index, target_index] = betas
-                if fit_intercept:
-                    intercept[endpoint][factor_index, target_index] = full_nuisance_coef[0]
-                    control_offset = 1
-                else:
-                    intercept_values = np.where(valid_matrix, 0.0, np.nan)
-                    intercept[endpoint][factor_index, target_index] = intercept_values
-                    control_offset = 0
-                if n_controls:
+                if factor_coef is not None and intercept is not None:
+                    factor_coef[endpoint][factor_index, target_index] = betas
+                    if fit_intercept:
+                        intercept[endpoint][factor_index, target_index] = full_nuisance_coef[0]
+                    else:
+                        intercept_values = np.where(valid_matrix, 0.0, np.nan)
+                        intercept[endpoint][factor_index, target_index] = intercept_values
+                control_offset = int(fit_intercept)
+                if n_controls and nuisance_coef is not None:
                     control_values_block = full_nuisance_coef[
                         control_offset : control_offset + n_controls
                     ].transpose(1, 0, 2)
@@ -779,16 +816,34 @@ def rolling_fwl_solve(
                     ] = control_values_block
 
                 metric_valid = np.where(valid_matrix, 1.0, np.nan)
-                ssr[endpoint][factor_index, target_index] = group_ssr * metric_valid
-                sst[endpoint][factor_index, target_index] = group_sst[None, :] * metric_valid
-                reduced_ssr[endpoint][factor_index, target_index] = (
-                    group_reduced_ssr[None, :] * metric_valid
-                )
-                n_used[endpoint][factor_index, target_index] = observations_used * metric_valid
-                effective_count = 1.0 / np.sum(complete_weights**2)
-                n_eff[endpoint][factor_index, target_index] = effective_count * metric_valid
+                if n_used is not None:
+                    n_used[endpoint][factor_index, target_index] = observations_used * metric_valid
+                effective_count = _effective_sample_size(complete_weights)
+                if not residuals_only:
+                    sufficient_statistics.append(
+                        PatternSufficientStatistics(
+                            endpoint=endpoint,
+                            factor_positions=factor_positions.copy(),
+                            target_positions=target_output_positions.copy(),
+                            cross_products=cross_products.copy(),
+                            denominators=denominators.copy(),
+                            reduced_ssr=group_reduced_ssr.copy(),
+                            raw_sst=group_sst.copy(),
+                            n_used=observations_used,
+                            n_eff=effective_count,
+                        )
+                    )
 
-                if complete_case[-1]:
+                if ssr is not None:
+                    assert sst is not None and reduced_ssr is not None and n_eff is not None
+                    ssr[endpoint][factor_index, target_index] = group_ssr * metric_valid
+                    sst[endpoint][factor_index, target_index] = group_sst[None, :] * metric_valid
+                    reduced_ssr[endpoint][factor_index, target_index] = (
+                        group_reduced_ssr[None, :] * metric_valid
+                    )
+                    n_eff[endpoint][factor_index, target_index] = effective_count * metric_valid
+
+                if resid_endpoint is not None and complete_case[-1]:
                     endpoint_targets = window_targets[-1, target_positions]
                     endpoint_factors = window_factors[-1, factor_positions]
                     fitted_endpoint = endpoint_factors[:, None] * betas
@@ -806,14 +861,15 @@ def rolling_fwl_solve(
         _warn_ill_conditioned(n_ill_conditioned, cond_warn_threshold)
     return BatchedFitResult(
         factor_coef=factor_coef,
+        intercept=intercept,
+        n_used=n_used,
+        sufficient_statistics=tuple(sufficient_statistics),
         nuisance_coef=nuisance_coef,
         nuisance_resid_endpoint=nuisance_resid_endpoint,
-        intercept=intercept,
         resid_endpoint=resid_endpoint,
         ssr=ssr,
         sst=sst,
         reduced_ssr=reduced_ssr,
-        n_used=n_used,
         n_eff=n_eff,
         n_singular=n_singular,
         n_ill_conditioned=n_ill_conditioned,
