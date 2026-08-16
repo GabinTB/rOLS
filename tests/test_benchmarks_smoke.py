@@ -70,14 +70,14 @@ def test_medium_tripwire_controls_exit_status(capsys):
     config = {"lambda_": 0.0, "ewma_halflife": None, "mode": "batched"}
     dimensions = {**SIZE_GRID["medium"].__dict__}
 
-    def record(total: float) -> dict:
+    def record(total: float, *, comparable: bool = True) -> dict:
         measurement = {
             "wall_seconds": total / 2,
             "python_peak_bytes": 0,
             "peak_rss_bytes": 1,
             "rss_increase_bytes": 0,
         }
-        return {
+        result = {
             "size": "medium",
             "dimensions": dimensions,
             "nan_pattern": "clean",
@@ -92,8 +92,16 @@ def test_medium_tripwire_controls_exit_status(capsys):
             },
             "output_size_bytes": 0,
         }
+        if not comparable:
+            result["comparable"] = False
+            result["comparison_reason"] = "estimator semantics changed"
+        return result
 
     baseline = {"records": [record(1.0)]}
     assert compare_payloads({"records": [record(3.0)]}, baseline)
     assert not compare_payloads({"records": [record(3.01)]}, baseline)
-    capsys.readouterr()
+    non_comparable = {"records": [record(1.0, comparable=False)]}
+    assert compare_payloads({"records": [record(30.0)]}, non_comparable)
+    output = capsys.readouterr().out
+    assert "excluded from gate: estimator semantics changed" in output
+    assert "no" in output

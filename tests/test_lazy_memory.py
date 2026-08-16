@@ -279,15 +279,16 @@ def test_r2_reconstructs_from_pattern_sufficient_statistics() -> None:
         factors, targets, controls
     )
     actual = result.get_r2("f0").to_numpy()
+    beta = result.get_beta("f0").to_numpy()
 
     for pattern in result._sufficient_statistics:
+        assert not hasattr(pattern, "cross_products")
         matches = np.flatnonzero(pattern.factor_positions == 0)
         if matches.size == 0:
             continue
         local_factor = int(matches[0])
-        explained_ss = (
-            pattern.cross_products[local_factor] ** 2 / pattern.denominators[local_factor]
-        )
+        endpoint_beta = beta[pattern.endpoint, pattern.target_positions]
+        explained_ss = endpoint_beta**2 * pattern.denominators[local_factor]
         reconstructed = 1.0 - (pattern.reduced_ssr - explained_ss) / pattern.raw_sst
         np.testing.assert_allclose(
             actual[pattern.endpoint, pattern.target_positions],
@@ -408,7 +409,6 @@ def test_estimate_memory_matches_persistent_small_result() -> None:
     statistic_bytes = sum(
         pattern.factor_positions.nbytes
         + pattern.target_positions.nbytes
-        + pattern.cross_products.nbytes
         + pattern.denominators.nbytes
         + pattern.reduced_ssr.nbytes
         + pattern.raw_sst.nbytes

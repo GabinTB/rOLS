@@ -311,7 +311,6 @@ class RollingOLS:
             "betas": factor_frame_bytes,
             "intercepts": factor_frame_bytes,
             "n_used": pattern_target_bytes,
-            "cross_products": factor_frame_bytes,
             "pattern_statistics": 3 * pattern_target_bytes
             + n_observations * n_factors * float_bytes,
             "retained_inputs": n_observations * (n_targets + n_factors + n_controls) * float_bytes,

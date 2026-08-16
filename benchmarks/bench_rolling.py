@@ -321,9 +321,11 @@ def _wall_metrics(record: dict[str, Any]) -> dict[str, float | None]:
 
 
 def compare_payloads(current: dict[str, Any], baseline: dict[str, Any]) -> bool:
-    """Print current/baseline ratios and return whether the 3x tripwire passed."""
+    """Print all ratios and gate only semantically comparable baseline cells."""
     baseline_by_key = {_record_key(record): record for record in baseline["records"]}
-    header = f"{'case':<58} {'metric':<14} {'current':>12} {'baseline':>12} {'ratio':>9}"
+    header = (
+        f"{'case':<58} {'metric':<14} {'current':>12} {'baseline':>12} {'ratio':>9} {'gated':>6}"
+    )
     print(header)
     print("-" * len(header))
     passed = True
@@ -333,6 +335,10 @@ def compare_payloads(current: dict[str, Any], baseline: dict[str, Any]) -> bool:
         if baseline_record is None:
             continue
         case = "/".join(str(part) for part in key)
+        comparable = baseline_record.get("comparable", True)
+        if not comparable:
+            reason = baseline_record.get("comparison_reason", "baseline semantics differ")
+            print(f"# {case}: excluded from gate: {reason}")
         current_metrics = _wall_metrics(record)
         baseline_metrics = _wall_metrics(baseline_record)
         for metric, current_value in current_metrics.items():
@@ -342,12 +348,13 @@ def compare_payloads(current: dict[str, Any], baseline: dict[str, Any]) -> bool:
             else:
                 ratio = current_value / baseline_value
                 ratio_text = f"{ratio:.2f}x"
-                if record["size"] == "medium" and metric == "total" and ratio > 3.0:
+                if comparable and record["size"] == "medium" and metric == "total" and ratio > 3.0:
                     passed = False
             print(
                 f"{case:<58} {metric:<14} "
                 f"{_format_seconds(current_value):>12} "
-                f"{_format_seconds(baseline_value):>12} {ratio_text:>9}"
+                f"{_format_seconds(baseline_value):>12} {ratio_text:>9} "
+                f"{('yes' if comparable else 'no'):>6}"
             )
     return passed
 

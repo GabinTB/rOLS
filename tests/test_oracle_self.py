@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+import statsmodels.api as sm
 
 from tests.conftest import assert_matches_oracle
 from tests.oracle import oracle_fit_window, oracle_hac_se, oracle_rolling
@@ -195,8 +196,7 @@ def test_hac_lag_zero_matches_manual_weighted_sandwich() -> None:
     np.testing.assert_allclose(actual, np.sqrt(np.diag(covariance)), atol=1e-12)
 
 
-def test_matches_statsmodels_when_available() -> None:
-    sm = pytest.importorskip("statsmodels.api")
+def test_matches_statsmodels() -> None:
     rng = np.random.default_rng(8)
     regressors = rng.normal(size=(60, 2))
     target = 2.0 + regressors @ np.array([0.5, -1.5]) + rng.normal(size=60)

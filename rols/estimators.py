@@ -62,7 +62,6 @@ class PatternSufficientStatistics:
     endpoint: int
     factor_positions: np.ndarray
     target_positions: np.ndarray
-    cross_products: np.ndarray
     denominators: np.ndarray
     reduced_ssr: np.ndarray
     raw_sst: np.ndarray
@@ -825,7 +824,6 @@ def rolling_fwl_solve(
                             endpoint=endpoint,
                             factor_positions=factor_positions.copy(),
                             target_positions=target_output_positions.copy(),
-                            cross_products=cross_products.copy(),
                             denominators=denominators.copy(),
                             reduced_ssr=group_reduced_ssr.copy(),
                             raw_sst=group_sst.copy(),

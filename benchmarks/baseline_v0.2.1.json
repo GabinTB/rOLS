@@ -192,7 +192,9 @@
         },
         "total_wall_seconds": 0.03738416702253744
       },
-      "output_size_bytes": 1200000
+      "output_size_bytes": 1200000,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "tiny",
@@ -250,7 +252,9 @@
         },
         "total_wall_seconds": 0.044035248865839094
       },
-      "output_size_bytes": 1200000
+      "output_size_bytes": 1200000,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "tiny",
@@ -424,7 +428,9 @@
         },
         "total_wall_seconds": 0.06372512597590685
       },
-      "output_size_bytes": 1200000
+      "output_size_bytes": 1200000,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "tiny",
@@ -482,7 +488,9 @@
         },
         "total_wall_seconds": 0.08039433596422896
       },
-      "output_size_bytes": 1200000
+      "output_size_bytes": 1200000,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "tiny",
@@ -656,7 +664,9 @@
         },
         "total_wall_seconds": 0.04046804097015411
       },
-      "output_size_bytes": 1200000
+      "output_size_bytes": 1200000,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "tiny",
@@ -714,7 +724,9 @@
         },
         "total_wall_seconds": 0.05779675114899874
       },
-      "output_size_bytes": 1200000
+      "output_size_bytes": 1200000,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "small",
@@ -888,7 +900,9 @@
         },
         "total_wall_seconds": 0.339672208938282
       },
-      "output_size_bytes": 22498560
+      "output_size_bytes": 22498560,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "small",
@@ -946,7 +960,9 @@
         },
         "total_wall_seconds": 1.3143017900292762
       },
-      "output_size_bytes": 22498560
+      "output_size_bytes": 22498560,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "small",
@@ -1120,7 +1136,9 @@
         },
         "total_wall_seconds": 1.2781643741182052
       },
-      "output_size_bytes": 22498560
+      "output_size_bytes": 22498560,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "small",
@@ -1178,7 +1196,9 @@
         },
         "total_wall_seconds": 2.5403797500184737
       },
-      "output_size_bytes": 22498560
+      "output_size_bytes": 22498560,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "small",
@@ -1352,7 +1372,9 @@
         },
         "total_wall_seconds": 0.9631662089959718
       },
-      "output_size_bytes": 22498560
+      "output_size_bytes": 22498560,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "small",
@@ -1410,7 +1432,9 @@
         },
         "total_wall_seconds": 1.8836569159757346
       },
-      "output_size_bytes": 22498560
+      "output_size_bytes": 22498560,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "medium",
@@ -1584,7 +1608,9 @@
         },
         "total_wall_seconds": 6.601744123967364
       },
-      "output_size_bytes": 829019520
+      "output_size_bytes": 829019520,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "medium",
@@ -1642,7 +1668,9 @@
         },
         "total_wall_seconds": 43.714507917058654
       },
-      "output_size_bytes": 829019520
+      "output_size_bytes": 829019520,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "medium",
@@ -1816,7 +1844,9 @@
         },
         "total_wall_seconds": 16.26941791799618
       },
-      "output_size_bytes": 829019520
+      "output_size_bytes": 829019520,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "medium",
@@ -1874,7 +1904,9 @@
         },
         "total_wall_seconds": 58.394983666948974
       },
-      "output_size_bytes": 829019520
+      "output_size_bytes": 829019520,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "medium",
@@ -2048,7 +2080,9 @@
         },
         "total_wall_seconds": 14.267742291965988
       },
-      "output_size_bytes": 829019520
+      "output_size_bytes": 829019520,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "medium",
@@ -2106,7 +2140,9 @@
         },
         "total_wall_seconds": 51.24617758393288
       },
-      "output_size_bytes": 829019520
+      "output_size_bytes": 829019520,
+      "comparable": false,
+      "comparison_reason": "v0.2.1 lambda_ was inert without controls and used a non-joint hybrid estimator with controls"
     },
     {
       "size": "large",

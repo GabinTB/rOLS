@@ -71,4 +71,6 @@ uv run python -m benchmarks.bench_rolling \
 Comparison mode runs tiny, small, and medium by default, prints wall-time ratios
 for every common measurement, and exits non-zero when a medium case's total
 measured time exceeds 3x baseline. This is a regression tripwire, not the final
-performance target.
+performance target. Records marked `"comparable": false` are still printed but
+do not affect the exit status. The v0.2.1 Ridge cells are excluded because that
+version did not compute the corrected joint Ridge estimator.
