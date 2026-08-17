@@ -26,11 +26,12 @@ The test suite consists of 92 tests organized into 4 main modules:
 ### 1. **test_estimators.py** (19 tests)
 Tests for low-level rolling estimators in `rols/estimators.py`:
 - `rolling_residualize()`: OLS and Ridge regression residuals
-- `hac_se()`: Newey-West HAC standard errors
+- `rolling_hac_se()`: current-window weighted Newey-West HAC standard errors
 
 **Key test classes:**
 - `TestRollingResidualize`: 9 tests covering OLS/Ridge, expanding windows, NaN handling, min_periods
-- `TestHACSE`: 5 tests for HAC standard error computation
+- `TestHACSE`: scalar-oracle, statsmodels, HC0, weighting, guard, and
+  complete-case tests for HAC standard error computation
 
 ### 2. **test_model.py** (33 tests)
 Tests for the main `RollingOLS` class in `rols/model.py`:

@@ -8,7 +8,7 @@ or pandas DataFrames and are independent of the model class.
 Functions
 ---------
 rolling_residualize   : rolling OLS/Ridge residualization (Frisch-Waugh step)
-hac_se                : Newey-West HAC standard errors from residuals
+rolling_hac_se        : current-window Newey-West HAC standard errors
 """
 
 from __future__ import annotations
@@ -34,6 +34,22 @@ class JointFitResult:
     n_eff: np.ndarray
     n_singular: int = 0
     n_ill_conditioned: int = 0
+
+
+@dataclass(frozen=True)
+class JointWindowResult:
+    """One complete-case joint fit and optional current-window HAC output."""
+
+    parameters: np.ndarray
+    endpoint_residual: np.ndarray
+    ssr: np.ndarray
+    sst: np.ndarray
+    n_used: int
+    n_eff: float
+    factor_se: np.ndarray | None = None
+    hac_residuals: np.ndarray | None = None
+    hac_bread_invalid: bool = False
+    n_invalid_hac_variance: int = 0
 
 
 @dataclass(frozen=True)
@@ -91,6 +107,19 @@ def _warn_ill_conditioned(n: int, threshold: float) -> None:
         f"(cond(X'X) > {threshold:.0e}). Estimates in those windows may be "
         "numerically unreliable. Consider Ridge (lambda_ > 0) or removing "
         "collinear regressors.",
+        RuntimeWarning,
+        stacklevel=3,
+    )
+
+
+def _warn_invalid_hac(n_bread: int, n_variance: int) -> None:
+    """Emit one warning for undefined HAC bread or non-positive variances."""
+    if n_bread <= 0 and n_variance <= 0:
+        return
+    warnings.warn(
+        "HAC inference returned NaN for "
+        f"{n_bread} singular or near-singular bread block(s) and "
+        f"{n_variance} non-positive variance estimate(s).",
         RuntimeWarning,
         stacklevel=3,
     )
@@ -169,6 +198,68 @@ def _effective_sample_size(weights: np.ndarray) -> float:
     return weight_mass**2 / squared_mass
 
 
+def _sqrt_hac_variances(variances: np.ndarray) -> tuple[np.ndarray, int]:
+    """Take guarded square roots and count finite non-positive variances."""
+    standard_errors = np.full(variances.shape, np.nan)
+    invalid_variance = np.isfinite(variances) & (variances <= 0)
+    positive_variance = np.isfinite(variances) & (variances > 0)
+    standard_errors[positive_variance] = np.sqrt(np.maximum(variances[positive_variance], 0.0))
+    return standard_errors, int(invalid_variance.sum())
+
+
+def _factor_hac_standard_errors(
+    solve_design: np.ndarray,
+    residuals: np.ndarray,
+    complete_weights: np.ndarray,
+    bread: np.ndarray,
+    scales: np.ndarray,
+    n_eff: float,
+    n_lags: int,
+    denom_tol: float,
+) -> tuple[np.ndarray, bool, int]:
+    """Return current-window HAC SEs for the final slope in solve coordinates."""
+    n_observations, n_parameters = solve_design.shape
+    standard_errors = np.full(residuals.shape[1], np.nan)
+    if n_lags >= n_observations or n_eff <= n_parameters:
+        return standard_errors, False, 0
+
+    try:
+        inverse_bread = np.linalg.solve(bread, np.eye(n_parameters))
+    except np.linalg.LinAlgError:
+        return standard_errors, True, 0
+    factor_inverse_row = inverse_bread[-1]
+    inverse_factor_information = inverse_bread[-1, -1]
+    if not np.isfinite(inverse_factor_information) or inverse_factor_information <= 0:
+        return standard_errors, True, 0
+    factor_information = 1.0 / inverse_factor_information
+    if not np.isfinite(factor_information) or factor_information <= denom_tol:
+        return standard_errors, True, 0
+
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        bread_projection = solve_design @ factor_inverse_row
+    if not np.isfinite(bread_projection).all():
+        return standard_errors, True, 0
+    projected_scores = complete_weights[:, None] * bread_projection[:, None] * residuals
+    variances = np.einsum("wn,wn->n", projected_scores, projected_scores)
+    for lag in range(1, n_lags + 1):
+        bartlett_weight = 1.0 - lag / (n_lags + 1)
+        variances += (
+            2.0
+            * bartlett_weight
+            * np.einsum(
+                "wn,wn->n",
+                projected_scores[lag:],
+                projected_scores[:-lag],
+            )
+        )
+
+    correction = n_eff / (n_eff - n_parameters)
+    variances *= correction
+    variances /= scales[-1] ** 2
+    standard_errors, n_invalid_variance = _sqrt_hac_variances(variances)
+    return standard_errors, False, n_invalid_variance
+
+
 def _solve_joint_window_block(
     targets: np.ndarray,
     design: np.ndarray,
@@ -177,7 +268,10 @@ def _solve_joint_window_block(
     weights: np.ndarray | None,
     penalty: np.ndarray,
     cond_warn_threshold: float,
-) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, float] | None, bool]:
+    hac_lags: int | None = None,
+    denom_tol: float = 0.0,
+    return_hac_residuals: bool = False,
+) -> tuple[JointWindowResult | None, bool]:
     """Solve one complete-case window for a block of identically masked targets."""
     n_used = int(complete_case.sum())
     if n_used == 0:
@@ -237,12 +331,17 @@ def _solve_joint_window_block(
     if not np.isfinite(solve_parameters).all():
         return None, False
 
-    parameters = solve_parameters / scales[:, None]
-    if fit_intercept:
-        parameters[0] -= means[1:] @ parameters[1:]
+    with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+        parameters = solve_parameters / scales[:, None]
+        if fit_intercept:
+            parameters[0] -= means[1:] @ parameters[1:]
+    if not np.isfinite(parameters).all():
+        return None, condition_number > cond_warn_threshold
 
     with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
         residuals = complete_targets - complete_design @ parameters
+    if not np.isfinite(residuals).all():
+        return None, condition_number > cond_warn_threshold
     ssr = np.sum(complete_weights[:, None] * residuals**2, axis=0)
     if fit_intercept:
         target_means = np.sum(complete_weights[:, None] * complete_targets, axis=0)
@@ -254,9 +353,35 @@ def _solve_joint_window_block(
         sst = np.sum(complete_weights[:, None] * complete_targets**2, axis=0)
     endpoint_residual = np.full(targets.shape[1], np.nan)
     if complete_case[-1]:
-        endpoint_residual = targets[-1] - design[-1] @ parameters
+        with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
+            endpoint_residual = targets[-1] - design[-1] @ parameters
     n_eff = _effective_sample_size(complete_weights)
-    result = parameters, endpoint_residual, ssr, sst, n_used, n_eff
+    factor_se = None
+    hac_bread_invalid = False
+    n_invalid_hac_variance = 0
+    if hac_lags is not None:
+        factor_se, hac_bread_invalid, n_invalid_hac_variance = _factor_hac_standard_errors(
+            solve_design=solve_design,
+            residuals=residuals,
+            complete_weights=complete_weights,
+            bread=design_gram + penalty,
+            scales=scales,
+            n_eff=n_eff,
+            n_lags=hac_lags,
+            denom_tol=denom_tol,
+        )
+    result = JointWindowResult(
+        parameters=parameters,
+        endpoint_residual=endpoint_residual,
+        ssr=ssr,
+        sst=sst,
+        n_used=n_used,
+        n_eff=n_eff,
+        factor_se=factor_se,
+        hac_residuals=residuals.copy() if return_hac_residuals else None,
+        hac_bread_invalid=hac_bread_invalid,
+        n_invalid_hac_variance=n_invalid_hac_variance,
+    )
     return result, condition_number > cond_warn_threshold
 
 
@@ -341,20 +466,20 @@ def rolling_joint_solve(
     def store_block(
         endpoint: int,
         target_positions: np.ndarray,
-        solved: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, float],
+        solved: JointWindowResult,
     ) -> None:
-        parameters, residual, window_ssr, window_sst, window_n_used, window_n_eff = solved
+        parameters = solved.parameters
         if fit_intercept:
             intercept[endpoint, target_positions] = parameters[0]
             coef[endpoint][:, target_positions] = parameters[1:]
         else:
             intercept[endpoint, target_positions] = 0.0
             coef[endpoint][:, target_positions] = parameters
-        resid_endpoint[endpoint, target_positions] = residual
-        ssr[endpoint, target_positions] = window_ssr
-        sst[endpoint, target_positions] = window_sst
-        n_used[endpoint, target_positions] = window_n_used
-        n_eff[endpoint, target_positions] = window_n_eff
+        resid_endpoint[endpoint, target_positions] = solved.endpoint_residual
+        ssr[endpoint, target_positions] = solved.ssr
+        sst[endpoint, target_positions] = solved.sst
+        n_used[endpoint, target_positions] = solved.n_used
+        n_eff[endpoint, target_positions] = solved.n_eff
 
     def solve_grouped_endpoint(
         endpoint: int,
@@ -1250,124 +1375,119 @@ def rolling_residualize(
 # ---------------------------------------------------------------------------
 
 
-def hac_se(
-    residuals: pd.DataFrame,
-    factor_values: pd.Series,
+def rolling_hac_se(
+    y: pd.DataFrame,
+    X: pd.DataFrame,
     window: int,
     min_periods: int,
     expanding: bool,
     n_lags: int,
+    fit_intercept: bool = True,
+    penalty: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
+    denom_tol: float = 1e-12,
+    warn_invalid: bool = True,
 ) -> pd.DataFrame:
+    """Compute factor HAC SEs from each endpoint's own current-window fit.
+
+    X contains the full slope design for one factor model, with the factor
+    of interest in its final column. Each endpoint and exact target-validity
+    pattern is solved independently. Its in-window residual block is reduced
+    immediately to one factor standard error per target and then released.
+
+    Bartlett lags count ordered complete-case observations. Supplied weights are
+    restricted to those rows and normalized before both the weighted fit and
+    sandwich. The small-sample correction is n_eff / (n_eff - k), where k
+    includes the intercept when present.
     """
-    Newey-West HAC standard errors for rolling univariate OLS betas.
+    assert y.index.equals(X.index), "y and X must have identical indexes"
+    if window <= 0 or min_periods <= 0:
+        raise ValueError("window and min_periods must be positive")
+    if not expanding and min_periods > window:
+        raise ValueError("min_periods cannot exceed window")
+    if n_lags < 0:
+        raise ValueError("n_lags must be non-negative")
+    if weights is not None and expanding:
+        raise ValueError("weights are not supported with expanding=True")
+    if not np.isfinite(denom_tol) or denom_tol < 0:
+        raise ValueError("denom_tol must be finite and non-negative")
 
-    For each asset and each time t, computes SE(beta_t) using the residuals
-    within the rolling window, corrected for autocorrelation up to n_lags.
+    target_values = y.to_numpy(dtype=np.float64)
+    regressor_values = X.to_numpy(dtype=np.float64)
+    n_observations, n_targets = target_values.shape
+    design = (
+        np.column_stack([np.ones(n_observations), regressor_values])
+        if fit_intercept
+        else regressor_values
+    )
+    n_parameters = design.shape[1]
+    if regressor_values.shape[1] == 0:
+        raise ValueError("X must contain at least one factor column")
 
-    The sandwich estimator is:
-        Var(beta) = (X'X)^{-1} * S * (X'X)^{-1}
-    where S is the Newey-West long-run variance of X * eps.
-
-    Note
-    ----
-    HAC standard errors are computed with equal weights regardless of
-    ``ewma_halflife``. EWMA-weighted HAC is not yet implemented, so SEs from a
-    model fitted with EWMA observation weighting still treat every observation
-    in the window equally.
-
-    Parameters
-    ----------
-    residuals     : (T, N) DataFrame — regression residuals per asset
-    factor_values : (T,) Series — the factor (regressor) values
-    window        : rolling window length
-    min_periods   : minimum observations
-    expanding     : use expanding window
-    n_lags        : number of lags for Newey-West (typically floor(T^(1/3)))
-
-    Returns
-    -------
-    pd.DataFrame of standard errors, same shape as residuals
-    """
-    resid_np = residuals.to_numpy(dtype=np.float64)
-    f_np = factor_values.to_numpy(dtype=np.float64)
-    T, N = resid_np.shape
-    se = np.full((T, N), np.nan)
-
-    def _nw_se_window(f_w: np.ndarray, e_w: np.ndarray) -> np.ndarray:
-        n_obs = len(f_w)
-        score = f_w[:, None] * e_w
-        xx = f_w @ f_w
-        S = np.einsum("ti,ti->i", score, score) / n_obs
-        for lag in range(1, n_lags + 1):
-            w = 1.0 - lag / (n_lags + 1)
-            gamma = np.einsum("ti,ti->i", score[lag:], score[:-lag]) / n_obs
-            S += 2 * w * gamma
-        var_beta = S * n_obs / (xx**2)
-        return np.sqrt(np.maximum(var_beta, 0.0))
-
-    def _fill_window(t: int, f_w: np.ndarray, e_w: np.ndarray) -> None:
-        # Factor NaN invalidates the whole window — no regressor, no SE.
-        if np.isnan(f_w).any():
-            return
-        if len(f_w) <= n_lags:
-            return
-        # Residual NaNs are handled per-asset: only contaminated columns are
-        # left NaN, clean columns get a valid SE (mirrors rolling_residualize).
-        asset_nan = np.isnan(e_w).any(axis=0)
-        if asset_nan.all():
-            return
-        valid = ~asset_nan
-        se[t, valid] = _nw_se_window(f_w, e_w[:, valid])
-
-    if expanding:
-        # Expanding window — loop required (variable window size per t).
-        for t in range(min_periods - 1, T):
-            _fill_window(t, f_np[: t + 1], resid_np[: t + 1])
+    if penalty is None:
+        penalty_matrix = np.zeros((n_parameters, n_parameters), dtype=np.float64)
     else:
-        # Rolling window — fully vectorized over T via stride tricks. The
-        # Python loop is O(n_lags) (typically 3-10), with T collapsed into the
-        # einsum reductions. This produces results identical to the per-window
-        # loop (see test_vectorized_matches_loop) at a large speedup: at
-        # T=1500, N=2300 the loop made ~1500 Python calls each doing O(n_lags*N)
-        # work, whereas this makes O(n_lags) numpy calls over the whole panel.
-        n_windows = T - window + 1
-        if n_windows > 0 and window > n_lags:
-            # (n_windows, window) and (n_windows, window, N) zero-copy views.
-            f_wins = _make_windows(f_np[:, None], window)[:, :, 0]
-            resid_wins = _make_windows(resid_np, window)
-            score_wins = f_wins[:, :, None] * resid_wins  # (n_windows, window, N)
+        penalty_matrix = np.asarray(penalty, dtype=np.float64)
+        if penalty_matrix.shape != (n_parameters, n_parameters):
+            raise ValueError(f"penalty must have shape ({n_parameters}, {n_parameters})")
+        if not np.isfinite(penalty_matrix).all():
+            raise ValueError("penalty must be finite")
+        if not np.allclose(penalty_matrix, np.diag(np.diag(penalty_matrix))):
+            raise ValueError("penalty must be diagonal")
+        if (np.diag(penalty_matrix) < 0).any():
+            raise ValueError("penalty entries must be non-negative")
+        if fit_intercept and (
+            not np.allclose(penalty_matrix[0], 0.0) or not np.allclose(penalty_matrix[:, 0], 0.0)
+        ):
+            raise ValueError("the intercept cannot be penalized")
 
-            xx = (f_wins**2).sum(axis=1)  # (n_windows,) — X'X per window
+    supplied_weights = None
+    if weights is not None:
+        supplied_weights = np.asarray(weights, dtype=np.float64)
+        if supplied_weights.shape != (window,):
+            raise ValueError(f"weights must have shape ({window},)")
+        if not np.isfinite(supplied_weights).all() or (supplied_weights < 0).any():
+            raise ValueError("weights must be finite and non-negative")
+        if supplied_weights.sum() <= 0:
+            raise ValueError("weights must have positive sum")
 
-            # Gamma(0) plus Bartlett-weighted lags, summed over the window axis.
-            S = np.einsum("twn,twn->tn", score_wins, score_wins) / window
-            for lag in range(1, n_lags + 1):
-                w = 1.0 - lag / (n_lags + 1)
-                gamma = (
-                    np.einsum(
-                        "twn,twn->tn",
-                        score_wins[:, lag:, :],
-                        score_wins[:, : window - lag, :],
-                    )
-                    / window
-                )
-                S += 2 * w * gamma
+    standard_errors = np.full((n_observations, n_targets), np.nan)
+    n_invalid_bread = 0
+    n_invalid_variance = 0
+    for endpoint in range(min_periods - 1, n_observations):
+        start = 0 if expanding else max(0, endpoint - window + 1)
+        window_targets = target_values[start : endpoint + 1]
+        window_design = design[start : endpoint + 1]
+        target_validity = np.isfinite(window_targets)
+        design_validity = np.isfinite(window_design).all(axis=1)
+        endpoint_weights = (
+            None if supplied_weights is None else supplied_weights[-(endpoint - start + 1) :]
+        )
 
-            # Sandwich: Var(beta) = (X'X)^{-1} S (X'X)^{-1}, with S scaled by n_obs.
-            var_beta = S * window / (xx[:, None] ** 2)
-            se_vals = np.sqrt(np.maximum(var_beta, 0.0))  # (n_windows, N)
+        for target_positions in _group_mask_columns(target_validity):
+            complete_case = target_validity[:, target_positions[0]] & design_validity
+            if int(complete_case.sum()) < min_periods:
+                continue
+            solved, _ = _solve_joint_window_block(
+                targets=window_targets[:, target_positions],
+                design=window_design,
+                complete_case=complete_case,
+                fit_intercept=fit_intercept,
+                weights=endpoint_weights,
+                penalty=penalty_matrix,
+                cond_warn_threshold=np.inf,
+                hac_lags=n_lags,
+                denom_tol=denom_tol,
+            )
+            if solved is None:
+                n_invalid_bread += target_positions.size
+                continue
+            if solved.hac_bread_invalid:
+                n_invalid_bread += target_positions.size
+            n_invalid_variance += solved.n_invalid_hac_variance
+            if solved.factor_se is not None:
+                standard_errors[endpoint, target_positions] = solved.factor_se
 
-            # NaN masking (consistent with issue #8 / _fill_window):
-            #   factor NaN  -> invalidate the whole window for every asset;
-            #   residual NaN -> invalidate only the affected asset column.
-            f_has_nan = np.isnan(f_wins).any(axis=1)  # (n_windows,)
-            asset_has_nan = f_has_nan[:, None] | np.isnan(resid_wins).any(axis=1)
-            t_idx = np.arange(n_windows) + window - 1
-            se[t_idx] = np.where(asset_has_nan, np.nan, se_vals)
-
-        if min_periods < window:
-            # Early windows have variable size (< window) — keep the loop.
-            for t in range(min_periods - 1, window - 1):
-                _fill_window(t, f_np[: t + 1], resid_np[: t + 1])
-
-    return pd.DataFrame(se, index=residuals.index, columns=residuals.columns)
+    if warn_invalid:
+        _warn_invalid_hac(n_invalid_bread, n_invalid_variance)
+    return pd.DataFrame(standard_errors, index=y.index, columns=y.columns)

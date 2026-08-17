@@ -9,7 +9,7 @@ from typing import TypeVar
 
 import pandas as pd
 
-from .estimators import PatternSufficientStatistics, hac_se
+from .estimators import PatternSufficientStatistics
 
 _CacheValue = TypeVar("_CacheValue")
 
@@ -54,6 +54,9 @@ class RollingOLSResult:
         repr=False,
     )
     _residual_loader: Callable[[str, Sequence[str] | None], pd.DataFrame] | None = field(
+        default=None, repr=False
+    )
+    _se_loader: Callable[[str, Sequence[str] | None], pd.DataFrame] | None = field(
         default=None, repr=False
     )
     _factor_adjusted_loader: Callable[[Sequence[str] | None], pd.DataFrame] | None = field(
@@ -279,14 +282,9 @@ class RollingOLSResult:
         if standard_errors is not None:
             self._se_cache.move_to_end(factor)
             return self._select_assets(standard_errors, assets)
-        standard_errors = hac_se(
-            residuals=self.get_residuals(factor, assets),
-            factor_values=self._factor_values[factor],
-            window=self.window,
-            min_periods=self.min_periods,
-            expanding=self.expanding,
-            n_lags=self.hac_lags,
-        )
+        if self._se_loader is None:
+            raise RuntimeError("HAC standard errors are not available.")
+        standard_errors = self._se_loader(factor, assets)
         if assets is not None:
             return standard_errors
         return self._remember(self._se_cache, factor, standard_errors)
@@ -297,7 +295,8 @@ class RollingOLSResult:
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
         """HAC t-statistic, derived as beta divided by standard error."""
-        return self.get_beta(factor, assets).div(self.get_se(factor, assets))
+        tstat = self.get_beta(factor, assets).div(self.get_se(factor, assets))
+        return tstat.replace([float("inf"), float("-inf")], float("nan"))
 
     def iter_beta(
         self,

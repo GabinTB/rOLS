@@ -195,6 +195,7 @@ def run_case(
     nan_pattern: str,
     config: BenchmarkConfig,
     seed: int = 0,
+    with_se: bool = True,
 ) -> dict[str, Any]:
     """Run one grid cell and return a JSON-serializable benchmark record."""
     if size_name not in SIZE_GRID:
@@ -215,7 +216,10 @@ def run_case(
     result, transform_measurement = _measure(lambda: model.transform(targets))
     factor = factors.columns[0]
     accessors: dict[str, dict[str, float | int] | None] = {}
-    for name in ("get_beta", "get_r2", "get_residuals", "get_se"):
+    accessor_names = ["get_beta", "get_r2", "get_residuals"]
+    if with_se:
+        accessor_names.append("get_se")
+    for name in accessor_names:
         accessor = getattr(result, name, None)
         if accessor is None:
             accessors[name] = None
@@ -248,6 +252,7 @@ def run_grid(
     seed: int = 0,
     output: Path | None = None,
     source_label: str = "current",
+    with_se: bool = True,
 ) -> dict[str, Any]:
     """Run selected grid cells, checkpointing and resuming when output is set."""
     if output is not None and output.exists():
@@ -280,7 +285,13 @@ def run_grid(
                 )
                 if key in completed:
                     continue
-                record = run_case(size_name, nan_pattern, config, seed=seed)
+                record = run_case(
+                    size_name,
+                    nan_pattern,
+                    config,
+                    seed=seed,
+                    with_se=with_se,
+                )
                 payload["records"].append(record)
                 completed.add(key)
                 if output is not None:
@@ -323,6 +334,7 @@ def _wall_metrics(record: dict[str, Any]) -> dict[str, float | None]:
 def compare_payloads(current: dict[str, Any], baseline: dict[str, Any]) -> bool:
     """Print all ratios and gate only semantically comparable baseline cells."""
     baseline_by_key = {_record_key(record): record for record in baseline["records"]}
+    metric_exclusions = baseline.get("metadata", {}).get("non_comparable_metrics", {})
     header = (
         f"{'case':<58} {'metric':<14} {'current':>12} {'baseline':>12} {'ratio':>9} {'gated':>6}"
     )
@@ -339,22 +351,33 @@ def compare_payloads(current: dict[str, Any], baseline: dict[str, Any]) -> bool:
         if not comparable:
             reason = baseline_record.get("comparison_reason", "baseline semantics differ")
             print(f"# {case}: excluded from gate: {reason}")
+        elif metric_exclusions:
+            exclusions = "; ".join(
+                f"{metric}: {reason}" for metric, reason in metric_exclusions.items()
+            )
+            print(f"# {case}: metric exclusions: {exclusions}")
         current_metrics = _wall_metrics(record)
         baseline_metrics = _wall_metrics(baseline_record)
         for metric, current_value in current_metrics.items():
             baseline_value = baseline_metrics.get(metric)
+            metric_comparable = comparable and metric not in metric_exclusions
             if current_value is None or baseline_value is None or baseline_value <= 0:
                 ratio_text = "null"
             else:
                 ratio = current_value / baseline_value
                 ratio_text = f"{ratio:.2f}x"
-                if comparable and record["size"] == "medium" and metric == "total" and ratio > 3.0:
+                if (
+                    metric_comparable
+                    and record["size"] == "medium"
+                    and metric == "total"
+                    and ratio > 3.0
+                ):
                     passed = False
             print(
                 f"{case:<58} {metric:<14} "
                 f"{_format_seconds(current_value):>12} "
                 f"{_format_seconds(baseline_value):>12} {ratio_text:>9} "
-                f"{('yes' if comparable else 'no'):>6}"
+                f"{('yes' if metric_comparable else 'no'):>6}"
             )
     return passed
 
@@ -371,6 +394,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--compare", type=Path)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--source-label", default="current")
+    parser.add_argument(
+        "--with-se",
+        action="store_true",
+        help="include lazy HAC standard-error computation in each benchmark case",
+    )
     return parser.parse_args(argv)
 
 
@@ -389,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
         seed=args.seed,
         output=args.output,
         source_label=args.source_label,
+        with_se=args.with_se or args.compare is not None,
     )
     if args.output is not None:
         _write_json(args.output, payload)

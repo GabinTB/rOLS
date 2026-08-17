@@ -160,6 +160,7 @@ class TestRollingOLSResultHAC:
 
         assert isinstance(tstat, pd.DataFrame)
         assert tstat.shape == (100, 2)
+        assert not np.isinf(tstat.to_numpy()).any()
 
     def test_get_tstat_without_hac_raises(self, setup_result_no_hac):
         """Test that get_tstat raises without hac_lags."""

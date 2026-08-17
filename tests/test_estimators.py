@@ -11,11 +11,12 @@ import rols.estimators as est
 from rols import RollingOLS
 from rols.estimators import (
     _solve_batch,
-    hac_se,
+    rolling_hac_se,
     rolling_joint_solve,
     rolling_residualize,
 )
 from rols.model import _ewma_weights
+from tests.oracle import oracle_fit_window, oracle_hac_se
 
 
 def test_removed_gram_schmidt_estimator_is_absent():
@@ -676,339 +677,253 @@ class TestWeightedResidualize:
 
 
 class TestHACSE:
-    """Tests for HAC standard errors (Newey-West)."""
-
-    def test_basic_hac_computation(self):
-        """Test basic HAC standard error computation."""
-        np.random.seed(42)
-        T = 100
-        residuals = pd.DataFrame(np.random.randn(T, 2), columns=["r1", "r2"])
-        factor = pd.Series(np.random.randn(T), name="factor")
-
-        result = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=20,
-            min_periods=20,
-            expanding=False,
-            n_lags=3,
-        )
-
-        assert result.shape == residuals.shape
-        assert all(result.isna().sum() <= T // 2)  # Most values should be non-NaN
-
-    def test_hac_expanding(self):
-        """Test HAC with expanding window."""
-        np.random.seed(42)
-        T = 50
-        residuals = pd.DataFrame(np.random.randn(T, 1), columns=["r"])
-        factor = pd.Series(np.random.randn(T), name="factor")
-
-        result = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=10,
-            min_periods=5,
-            expanding=True,
-            n_lags=2,
-        )
-
-        assert result.shape == residuals.shape
-
-    def test_hac_with_nans(self):
-        """Test HAC with NaN values."""
-        np.random.seed(42)
-        T = 100
-        residuals = pd.DataFrame(np.random.randn(T, 1), columns=["r"])
-        residuals.iloc[10:15] = np.nan
-        factor = pd.Series(np.random.randn(T), name="factor")
-
-        result = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=20,
-            min_periods=20,
-            expanding=False,
-            n_lags=3,
-        )
-
-        assert result.shape == residuals.shape
-
-    def test_hac_non_negative_se(self):
-        """Test that HAC SEs are non-negative."""
-        np.random.seed(42)
-        T = 100
-        residuals = pd.DataFrame(np.random.randn(T, 2), columns=["r1", "r2"])
-        factor = pd.Series(np.random.randn(T), name="factor")
-
-        result = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=20,
-            min_periods=20,
-            expanding=False,
-            n_lags=3,
-        )
-
-        # All non-NaN values should be non-negative
-        assert (result.fillna(0) >= 0).all().all()
-
-    def test_different_lag_lengths(self):
-        """Test HAC with different lag specifications."""
-        np.random.seed(42)
-        T = 100
-        residuals = pd.DataFrame(np.random.randn(T, 1), columns=["r"])
-        factor = pd.Series(np.random.randn(T), name="factor")
-
-        result_1lag = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=20,
-            min_periods=20,
-            expanding=False,
-            n_lags=1,
-        )
-
-        result_5lag = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=20,
-            min_periods=20,
-            expanding=False,
-            n_lags=5,
-        )
-
-        # Different lag lengths should produce different results
-        assert not result_1lag.equals(result_5lag)
-
-    def test_nan_isolated_per_asset(self):
-        """A NaN in one asset must not contaminate other assets' SE (issue #8)."""
-        np.random.seed(42)
-        T = 100
-        clean = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
-        factor = pd.Series(np.random.randn(T), name="factor")
-
-        se_clean = hac_se(
-            residuals=clean,
-            factor_values=factor,
-            window=20,
-            min_periods=20,
-            expanding=False,
-            n_lags=3,
-        )
-
-        # Introduce a NaN into a2 only, inside one window's reach.
-        contaminated = clean.copy()
-        contaminated.iloc[50, contaminated.columns.get_loc("a2")] = np.nan
-
-        se_contam = hac_se(
-            residuals=contaminated,
-            factor_values=factor,
-            window=20,
-            min_periods=20,
-            expanding=False,
-            n_lags=3,
-        )
-
-        # a1 and a3 SEs are identical to the all-clean run — no contamination.
-        pd.testing.assert_series_equal(se_clean["a1"], se_contam["a1"])
-        pd.testing.assert_series_equal(se_clean["a3"], se_contam["a3"])
-
-        # a2 is NaN exactly on the windows that span the NaN row (t in [50, 69]),
-        # and unaffected outside that span.
-        affected = se_contam["a2"].iloc[50:70]
-        assert affected.isna().all()
-        # A window ending before the NaN row is still valid for a2.
-        assert not np.isnan(se_contam["a2"].iloc[49])
-
-    def test_factor_nan_invalidates_whole_window(self):
-        """A factor NaN drops SE for ALL assets in affected windows."""
-        np.random.seed(0)
-        T = 100
-        residuals = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
-        factor = pd.Series(np.random.randn(T), name="factor")
-        factor.iloc[50] = np.nan
-
-        se = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=20,
-            min_periods=20,
-            expanding=False,
-            n_lags=3,
-        )
-
-        # Every window spanning t=50 (i.e. t in [50, 69]) is fully NaN.
-        affected = se.iloc[50:70]
-        assert affected.isna().all().all()
-        # A window ending at t=49 is unaffected for all assets.
-        assert se.iloc[49].notna().all()
-
-    def test_matches_manual_newey_west(self):
-        """Cross-check SE against a manual Newey-West on a clean single-asset window."""
-        np.random.seed(7)
-        T = 40
-        window, n_lags = 20, 3
-        e = np.random.randn(T)
-        f = np.random.randn(T)
-        residuals = pd.DataFrame({"a1": e})
-        factor = pd.Series(f, name="factor")
-
-        se = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=window,
-            min_periods=window,
-            expanding=False,
-            n_lags=n_lags,
-        )
-
-        # Manual Newey-West for the window ending at the last timestep.
-        t = T - 1
-        f_w = f[t - window + 1 : t + 1]
-        e_w = e[t - window + 1 : t + 1]
-        n_obs = window
-        score = f_w * e_w
-        xx = f_w @ f_w
-        S = np.sum(score**2) / n_obs
-        for lag in range(1, n_lags + 1):
-            w = 1.0 - lag / (n_lags + 1)
-            gamma = np.sum(score[lag:] * score[:-lag]) / n_obs
-            S += 2 * w * gamma
-        var_beta = S * n_obs / (xx**2)
-        expected = np.sqrt(max(var_beta, 0.0))
-
-        assert se["a1"].iloc[t] == pytest.approx(expected, rel=1e-10)
+    """Current-window HAC inference matches independent implementations."""
 
     @staticmethod
-    def _loop_hac_se(residuals, factor_values, window, min_periods, n_lags):
-        """Reference per-window loop implementation (the pre-vectorization path)."""
-        resid_np = residuals.to_numpy(dtype=np.float64)
-        f_np = factor_values.to_numpy(dtype=np.float64)
-        T, N = resid_np.shape
-        se = np.full((T, N), np.nan)
-
-        def _nw(f_w, e_w):
-            n_obs = len(f_w)
-            score = f_w[:, None] * e_w
-            xx = f_w @ f_w
-            S = np.einsum("ti,ti->i", score, score) / n_obs
-            for lag in range(1, n_lags + 1):
-                w = 1.0 - lag / (n_lags + 1)
-                gamma = np.einsum("ti,ti->i", score[lag:], score[:-lag]) / n_obs
-                S += 2 * w * gamma
-            return np.sqrt(np.maximum(S * n_obs / (xx**2), 0.0))
-
-        def _fill(t, f_w, e_w):
-            if np.isnan(f_w).any() or len(f_w) <= n_lags:
-                return
-            asset_nan = np.isnan(e_w).any(axis=0)
-            if asset_nan.all():
-                return
-            valid = ~asset_nan
-            se[t, valid] = _nw(f_w, e_w[:, valid])
-
-        for t in range(window - 1, T):
-            start = t - window + 1
-            _fill(t, f_np[start : t + 1], resid_np[start : t + 1])
-        if min_periods < window:
-            for t in range(min_periods - 1, window - 1):
-                _fill(t, f_np[: t + 1], resid_np[: t + 1])
-        return pd.DataFrame(se, index=residuals.index, columns=residuals.columns)
-
-    def test_vectorized_matches_loop(self):
-        """Vectorized rolling path is numerically identical to the loop path."""
-        np.random.seed(123)
-        T, N = 200, 5
-        residuals = pd.DataFrame(np.random.randn(T, N), columns=[f"a{i}" for i in range(N)])
-        factor = pd.Series(np.random.randn(T), name="factor")
-
-        for window, n_lags in [(20, 3), (30, 5), (15, 1), (50, 8)]:
-            got = hac_se(
-                residuals=residuals,
-                factor_values=factor,
-                window=window,
-                min_periods=window,
-                expanding=False,
-                n_lags=n_lags,
-            )
-            ref = self._loop_hac_se(residuals, factor, window, window, n_lags)
-            assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True), (
-                f"mismatch for window={window}, n_lags={n_lags}"
-            )
-
-    def test_vectorized_matches_loop_with_nans(self):
-        """Vectorized path matches the loop when factor and residual NaNs are present."""
-        np.random.seed(321)
-        T, N = 150, 4
-        residuals = pd.DataFrame(np.random.randn(T, N), columns=[f"a{i}" for i in range(N)])
-        residuals.iloc[40, 1] = np.nan  # per-asset residual NaN
-        residuals.iloc[80:83, 2] = np.nan
-        factor = pd.Series(np.random.randn(T), name="factor")
-        factor.iloc[100] = np.nan  # whole-window factor NaN
-
-        got = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=25,
-            min_periods=25,
-            expanding=False,
-            n_lags=4,
+    def _sample(
+        n_observations: int = 48,
+        n_controls: int = 2,
+        seed: int = 71,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        rng = np.random.default_rng(seed)
+        columns = [f"control_{position}" for position in range(n_controls)] + ["factor"]
+        design = pd.DataFrame(rng.normal(size=(n_observations, len(columns))), columns=columns)
+        coefficients = rng.normal(size=(len(columns), 2))
+        noise = rng.normal(size=(n_observations, 2))
+        targets = pd.DataFrame(
+            1.5 + design.to_numpy() @ coefficients + noise,
+            columns=["asset_1", "asset_2"],
         )
-        ref = self._loop_hac_se(residuals, factor, 25, 25, 4)
-        assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True)
+        return targets, design
 
-    def test_vectorized_matches_loop_min_periods_lt_window(self):
-        """Early (min_periods < window) windows still match the loop path."""
-        np.random.seed(7)
-        T, N = 120, 3
-        residuals = pd.DataFrame(np.random.randn(T, N), columns=[f"a{i}" for i in range(N)])
-        factor = pd.Series(np.random.randn(T), name="factor")
+    @pytest.mark.parametrize("n_lags", [0, 1, 5])
+    @pytest.mark.parametrize("n_controls", [0, 2])
+    @pytest.mark.parametrize("fit_intercept", [False, True])
+    def test_matches_scalar_oracle(self, n_lags, n_controls, fit_intercept):
+        targets, design = self._sample(n_controls=n_controls)
+        result = rolling_hac_se(
+            targets,
+            design,
+            window=len(targets),
+            min_periods=len(targets),
+            expanding=False,
+            n_lags=n_lags,
+            fit_intercept=fit_intercept,
+        )
 
-        got = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=30,
-            min_periods=15,
+        for target in targets:
+            fit = oracle_fit_window(
+                targets[target].to_numpy(),
+                design.to_numpy(),
+                fit_intercept,
+                weights=None,
+                penalty=None,
+            )
+            coefficients = (
+                np.concatenate([[fit.intercept], fit.coef]) if fit_intercept else fit.coef
+            )
+            expected = oracle_hac_se(
+                targets[target].to_numpy(),
+                design.to_numpy(),
+                coefficients,
+                fit_intercept,
+                weights=None,
+                n_lags=n_lags,
+            )[-1]
+            assert result[target].iloc[-1] == pytest.approx(expected, rel=1e-11, abs=1e-12)
+
+    def test_matches_statsmodels_hac(self):
+        import statsmodels.api as sm
+
+        targets, design = self._sample(n_observations=80, n_controls=2)
+        result = rolling_hac_se(
+            targets[["asset_1"]],
+            design,
+            window=80,
+            min_periods=80,
             expanding=False,
             n_lags=3,
         )
-        ref = self._loop_hac_se(residuals, factor, 30, 15, 3)
-        assert np.allclose(got.to_numpy(), ref.to_numpy(), equal_nan=True)
-
-    def test_expanding_matches_loop(self):
-        """Expanding path is unchanged (still the loop) and matches the reference."""
-        np.random.seed(11)
-        T, N = 80, 2
-        residuals = pd.DataFrame(np.random.randn(T, N), columns=["a0", "a1"])
-        factor = pd.Series(np.random.randn(T), name="factor")
-
-        # Reference expanding loop.
-        resid_np = residuals.to_numpy(dtype=np.float64)
-        f_np = factor.to_numpy(dtype=np.float64)
-        n_lags, min_periods = 3, 10
-        ref = np.full((T, N), np.nan)
-        for t in range(min_periods - 1, T):
-            f_w, e_w = f_np[: t + 1], resid_np[: t + 1]
-            if np.isnan(f_w).any() or len(f_w) <= n_lags:
-                continue
-            score = f_w[:, None] * e_w
-            xx = f_w @ f_w
-            S = np.einsum("ti,ti->i", score, score) / len(f_w)
-            for lag in range(1, n_lags + 1):
-                w = 1.0 - lag / (n_lags + 1)
-                S += 2 * w * np.einsum("ti,ti->i", score[lag:], score[:-lag]) / len(f_w)
-            ref[t] = np.sqrt(np.maximum(S * len(f_w) / (xx**2), 0.0))
-
-        got = hac_se(
-            residuals=residuals,
-            factor_values=factor,
-            window=40,
-            min_periods=min_periods,
-            expanding=True,
-            n_lags=n_lags,
+        statsmodels_design = sm.add_constant(design.to_numpy(), has_constant="add")
+        fit = sm.OLS(targets["asset_1"].to_numpy(), statsmodels_design).fit(
+            cov_type="HAC",
+            cov_kwds={"maxlags": 3, "use_correction": True},
         )
-        assert np.allclose(got.to_numpy(), ref, equal_nan=True)
+        assert result.iloc[-1, 0] == pytest.approx(fit.bse[-1], rel=1e-10, abs=1e-12)
+
+    def test_lag_zero_is_hc0_with_small_sample_correction(self):
+        targets, design = self._sample(n_observations=64, n_controls=1)
+        target = targets["asset_1"].to_numpy()
+        regressors = design.to_numpy()
+        fitted = oracle_fit_window(target, regressors, True, None, None)
+        full_design = np.column_stack([np.ones(len(target)), regressors])
+        residuals = target - full_design @ np.concatenate([[fitted.intercept], fitted.coef])
+        weights = np.full(len(target), 1.0 / len(target))
+        bread_inverse = np.linalg.inv(full_design.T @ (weights[:, None] * full_design))
+        scores = weights[:, None] * full_design * residuals[:, None]
+        covariance = (
+            len(target)
+            / (len(target) - full_design.shape[1])
+            * bread_inverse
+            @ (scores.T @ scores)
+            @ bread_inverse
+        )
+        expected = np.sqrt(covariance[-1, -1])
+
+        result = rolling_hac_se(
+            targets[["asset_1"]],
+            design,
+            window=64,
+            min_periods=64,
+            expanding=False,
+            n_lags=0,
+        )
+        assert result.iloc[-1, 0] == pytest.approx(expected, rel=1e-11, abs=1e-12)
+
+    def test_residuals_belong_to_endpoint_fit(self):
+        targets, regressors = self._sample(n_observations=32, n_controls=1)
+        design = np.column_stack([np.ones(len(regressors)), regressors.to_numpy()])
+        solved, _ = est._solve_joint_window_block(
+            targets=targets[["asset_1"]].to_numpy(),
+            design=design,
+            complete_case=np.ones(len(targets), dtype=bool),
+            fit_intercept=True,
+            weights=None,
+            penalty=np.zeros((design.shape[1], design.shape[1])),
+            cond_warn_threshold=np.inf,
+            hac_lags=2,
+            return_hac_residuals=True,
+        )
+        assert solved is not None
+        expected = targets[["asset_1"]].to_numpy() - design @ solved.parameters
+        np.testing.assert_allclose(solved.hac_residuals, expected, rtol=0, atol=1e-12)
+
+        endpoint_residual_series = rolling_joint_solve(
+            targets[["asset_1"]],
+            regressors,
+            window=12,
+            min_periods=8,
+            expanding=False,
+            warn_singular=False,
+        ).resid_endpoint[:, 0]
+        assert not np.allclose(
+            solved.hac_residuals[-12:, 0],
+            endpoint_residual_series[-12:],
+            rtol=0,
+            atol=1e-12,
+        )
+
+    def test_controls_are_in_scores_and_bread(self):
+        targets, design = self._sample(n_observations=70, n_controls=2)
+        full = rolling_hac_se(targets[["asset_1"]], design, 70, 70, False, 4, fit_intercept=True)
+        factor_only = rolling_hac_se(
+            targets[["asset_1"]], design[["factor"]], 70, 70, False, 4, fit_intercept=True
+        )
+        fit = oracle_fit_window(targets["asset_1"].to_numpy(), design.to_numpy(), True, None, None)
+        expected = oracle_hac_se(
+            targets["asset_1"].to_numpy(),
+            design.to_numpy(),
+            np.concatenate([[fit.intercept], fit.coef]),
+            True,
+            None,
+            4,
+        )[-1]
+        assert full.iloc[-1, 0] == pytest.approx(expected, rel=1e-11)
+        assert full.iloc[-1, 0] != pytest.approx(factor_only.iloc[-1, 0], rel=1e-4)
+
+    def test_bread_guard_returns_nan_and_never_infinity(self):
+        rng = np.random.default_rng(22)
+        factor = 1.0 + rng.normal(scale=1e-14, size=40)
+        targets = pd.DataFrame({"asset": rng.normal(size=40)})
+        design = pd.DataFrame({"factor": factor})
+        with pytest.warns(RuntimeWarning, match="HAC inference returned NaN") as caught:
+            result = rolling_hac_se(
+                targets,
+                design,
+                window=40,
+                min_periods=40,
+                expanding=False,
+                n_lags=2,
+                denom_tol=1e-10,
+            )
+        assert len(caught) == 1
+        assert result.iloc[-1].isna().all()
+        assert not np.isinf(result.to_numpy()).any()
+
+    def test_non_positive_variance_is_nan_with_one_warning(self):
+        with pytest.warns(RuntimeWarning, match="2 non-positive variance") as caught:
+            est._warn_invalid_hac(0, 2)
+        assert len(caught) == 1
+
+        clamped, invalid_count = est._sqrt_hac_variances(np.array([-np.finfo(float).eps, 0.25]))
+        assert invalid_count == 1
+        assert np.isnan(clamped[0])
+        assert clamped[1] == 0.5
+
+        solve_design = np.column_stack([np.ones(6), np.arange(6, dtype=float)])
+        residuals = np.zeros((6, 1))
+        standard_errors, bread_invalid, invalid_count = est._factor_hac_standard_errors(
+            solve_design=solve_design,
+            residuals=residuals,
+            complete_weights=np.full(6, 1 / 6),
+            bread=solve_design.T @ (solve_design / 6),
+            scales=np.ones(2),
+            n_eff=6.0,
+            n_lags=0,
+            denom_tol=0.0,
+        )
+        assert not bread_invalid
+        assert invalid_count == 1
+        assert np.isnan(standard_errors[0])
+        assert not np.isinf(standard_errors).any()
+
+    def test_weighted_matches_oracle_and_uniform_is_identical(self):
+        targets, design = self._sample(n_observations=52, n_controls=1)
+        uniform = np.ones(52)
+        unweighted = rolling_hac_se(targets, design, 52, 52, False, 3)
+        uniform_result = rolling_hac_se(targets, design, 52, 52, False, 3, weights=uniform)
+        np.testing.assert_array_equal(unweighted.to_numpy(), uniform_result.to_numpy())
+
+        weights = np.geomspace(0.1, 1.0, 52)
+        weighted = rolling_hac_se(targets, design, 52, 52, False, 3, weights=weights)
+        fit = oracle_fit_window(
+            targets["asset_1"].to_numpy(), design.to_numpy(), True, weights, None
+        )
+        expected = oracle_hac_se(
+            targets["asset_1"].to_numpy(),
+            design.to_numpy(),
+            np.concatenate([[fit.intercept], fit.coef]),
+            True,
+            weights,
+            3,
+        )[-1]
+        assert weighted["asset_1"].iloc[-1] == pytest.approx(expected, rel=1e-11)
+
+    def test_nan_isolation_and_complete_case_factor_rows(self):
+        targets, design = self._sample(n_observations=45, n_controls=1)
+        clean = rolling_hac_se(targets, design, 20, 18, False, 2)
+        contaminated_targets = targets.copy()
+        contaminated_targets.iloc[30, 1] = np.nan
+        isolated = rolling_hac_se(contaminated_targets, design, 20, 18, False, 2)
+        pd.testing.assert_series_equal(clean["asset_1"], isolated["asset_1"])
+
+        design_with_nan = design.copy()
+        design_with_nan.iloc[30, -1] = np.nan
+        factor_nan = rolling_hac_se(targets, design_with_nan, 20, 18, False, 2)
+        endpoint = 40
+        start = endpoint - 19
+        target_window = targets["asset_1"].iloc[start : endpoint + 1].to_numpy()
+        design_window = design_with_nan.iloc[start : endpoint + 1].to_numpy()
+        fit = oracle_fit_window(target_window, design_window, True, None, None)
+        expected = oracle_hac_se(
+            target_window,
+            design_window,
+            np.concatenate([[fit.intercept], fit.coef]),
+            True,
+            None,
+            2,
+        )[-1]
+        assert factor_nan["asset_1"].iloc[endpoint] == pytest.approx(expected, rel=1e-11)
 
 
 class TestSolveBatch:

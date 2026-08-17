@@ -12,8 +12,8 @@ import pytest
 from rols import RollingOLS
 from rols.estimators import (
     _effective_sample_size,
-    hac_se,
     rolling_fwl_solve,
+    rolling_hac_se,
     rolling_joint_solve,
 )
 from tests.oracle import oracle_fit_window, oracle_rolling
@@ -109,7 +109,16 @@ def test_lazy_accessors_match_eager_fwl_outputs() -> None:
         r2 = 1.0 - (1.0 - r2) * adjustment
         partial_r2 = 1.0 - (1.0 - partial_r2) * adjustment
         signal = beta.mul(factors[factor], axis=0)
-        se = hac_se(residuals, factors[factor], window, min_periods, False, 2)
+        design = pd.concat([controls, factors[[factor]]], axis=1)
+        se = rolling_hac_se(
+            targets,
+            design,
+            window,
+            min_periods,
+            False,
+            2,
+            weights=weights,
+        )
 
         expected = {
             "get_beta": beta,
@@ -201,13 +210,14 @@ def test_lazy_accessors_match_eager_joint_ridge_outputs() -> None:
             "get_residuals": residuals,
             "get_dof": pd.DataFrame(eager.n_eff - design.shape[1] - 1, **frame_kwargs),
             "get_n_used": pd.DataFrame(eager.n_used, **frame_kwargs),
-            "get_se": hac_se(
-                residuals,
-                factors[factor],
+            "get_se": rolling_hac_se(
+                targets,
+                design,
                 window=16,
                 min_periods=11,
                 expanding=False,
                 n_lags=2,
+                penalty=penalty,
             ),
         }
         expected["get_tstat"] = beta.div(expected["get_se"])
@@ -438,6 +448,32 @@ def test_residual_iteration_has_bounded_live_cache() -> None:
         assert residuals.shape == targets.shape
         assert len(result._residual_cache) <= 1
         del residuals
+        gc.collect()
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+    assert peak <= (result.cache_size + 1) * frame_bytes + 12_000_000
+
+
+@pytest.mark.slow
+def test_se_iteration_streams_endpoints_with_bounded_memory() -> None:
+    targets, factors, controls = _small_panel(
+        n_observations=300,
+        n_targets=60,
+        n_factors=4,
+        n_controls=2,
+    )
+    result = RollingOLS(
+        window=40,
+        hac_lags=3,
+        cache_size=1,
+        dtype="float64",
+    ).fit_transform(factors, targets, controls)
+    frame_bytes = len(targets) * targets.shape[1] * np.dtype(np.float64).itemsize
+    tracemalloc.start()
+    for _, standard_errors in result.iter_se():
+        assert standard_errors.shape == targets.shape
+        assert len(result._se_cache) <= 1
+        del standard_errors
         gc.collect()
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()

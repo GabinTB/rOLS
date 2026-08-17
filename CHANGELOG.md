@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `ewma_halflife` parameter on `RollingOLS`: exponentially weight observations
   within each window so recent data carries more weight. Flows through betas,
-  R², and the Frisch-Waugh residualization (weighted least squares per window).
-  Not compatible with `expanding=True`. HAC SEs remain equal-weighted. (#1)
+  R², HAC inference, and the Frisch-Waugh residualization (weighted least
+  squares per window). Not compatible with `expanding=True`. (#1)
 - `get_factor_adjusted_returns()` on `RollingOLSResult`: exposes the FWL step 2
   output (asset returns with only the controls partialled out), distinct from
   `get_residuals(factor)` which also removes the factor (step 3). (#3)
@@ -33,9 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asset-panel case), residualization is vectorized over time with an O(N) loop
   over assets instead of the O(T*N) per-column loop. Produces identical results
   with a large speedup at scale. (#2)
-- HAC standard error computation vectorized over the time axis via stride tricks;
-  the Python loop is now O(n_lags) instead of O(T). Expanding-window path still
-  loops. Results identical to the previous implementation. (#4)
+- HAC standard errors are computed lazily and streamed per endpoint so
+  current-window residuals are not retained across time or factors.
 
 ### Removed
 - Rolling Gram-Schmidt orthogonalization: `orthogonalize_factors` and
@@ -45,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Apply it to the factors before calling `fit()` if needed. (F11, F12)
 
 ### Fixed
+- HAC standard errors now use residuals from the beta's own current-window fit,
+  the full design and intercept in both bread and scores, the exact complete-case
+  sample, and the estimator's EWMA weights. Non-positive variances and invalid
+  bread produce NaN with one aggregated warning rather than infinite t-stats.
 - `_solve_batch` no longer lets `inf` from near-singular solves propagate into
   betas, signals, and R². Results are written in place and sanitized to NaN. (#6)
 - Adjusted R² no longer divides by zero when `n_obs <= 2`; the denominator is

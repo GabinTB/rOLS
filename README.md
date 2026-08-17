@@ -235,6 +235,11 @@ se    = result.get_se("f1")      # Newey-West SE
 tstat = result.get_tstat("f1")  # t-statistics
 ```
 
+Each standard error is computed from the same current-window fit as its beta.
+The sandwich uses the full design, including the intercept and controls, the
+same complete-case rows, Bartlett lag weights, and the estimator's observation
+weights. Computation is lazy and streams one endpoint at a time.
+
 ### EWMA observation weighting
 
 By default every observation in a window counts equally. When recent data should
@@ -249,12 +254,12 @@ ols = RollingOLS(window=252, ewma_halflife=63)
 result = ols.fit(df[["f1", "f2"]]).transform(df[targets])
 ```
 
-The weighting flows through the betas, R², and the Frisch-Waugh residualization
+The weighting flows through the betas, R², HAC standard errors, and the
+Frisch-Waugh residualization
 (weighted least squares per window). NaN rows are dropped per window and the
 surviving weights renormalized to sum to 1, so missing data does not distort the
 scheme. `ewma_halflife` cannot be combined with `expanding=True` (an expanding
-window has no fixed length to precompute weights over), and HAC standard errors
-are still computed with equal weights.
+window has no fixed length to precompute weights over).
 
 ### Expanding window
 
@@ -327,4 +332,7 @@ to process every factor without retaining all derived frames at once.
 
 **Precision (`dtype`)** — `dtype` controls the storage precision of the input and intermediate pandas DataFrames only. Internal matrix operations (gram matrix accumulation and the linear solve) always run in **float64** regardless of this setting, because `np.linalg.solve` loses accuracy in float32 for ill-conditioned windows. So `float32` reduces DataFrame memory but does not change the numerical precision of the regression itself.
 
-**HAC caching** — standard errors are computed lazily and cached on first call to `get_se()`. Calling it multiple times for the same factor incurs no extra cost.
+**HAC caching** — standard errors are computed lazily, one endpoint at a time,
+and cached on first call to `get_se()`. Calling it multiple times for the same
+factor incurs no extra cost. Use `iter_se()` to process all factors while keeping
+the factor cache bounded by `cache_size`.

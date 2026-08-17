@@ -35,6 +35,7 @@ from .estimators import (
     _warn_ill_conditioned,
     _warn_singular,
     rolling_fwl_solve,
+    rolling_hac_se,
     rolling_joint_solve,
 )
 from .results import FactorStatistics, RollingOLSResult
@@ -157,8 +158,8 @@ class RollingOLS:
         (default), all observations are weighted equally and the equal-weight
         fast paths are used unchanged (zero performance impact). Cannot be
         combined with expanding=True — expanding windows have variable length,
-        so the weight vector cannot be precomputed. Note: HAC standard errors
-        are always computed with equal weights (see hac_se).
+        so the weight vector cannot be precomputed. HAC standard errors use the
+        same window weights as the coefficient estimator.
     adj_r2 : bool
         Compute adjusted R² instead of R².
     lag_signal : bool
@@ -625,6 +626,9 @@ class RollingOLS:
         min_periods = self.min_periods
         expanding = self.expanding
         fit_intercept = self.fit_intercept
+        denom_tol = self.denom_tol
+        hac_lags = self.hac_lags
+        warn_singular = self.warn_singular
         cond_warn_threshold = self.cond_warn_threshold
         asset_chunk_size = self.asset_chunk_size
         n_controls = len(self._control_cols)
@@ -844,6 +848,27 @@ class RollingOLS:
                 residual_values = fit.resid_endpoint
             return pd.DataFrame(residual_values, index=targets.index, columns=targets.columns)
 
+        def load_standard_errors(
+            factor: str,
+            selected_assets: Sequence[str] | None,
+        ) -> pd.DataFrame:
+            if hac_lags is None:
+                raise RuntimeError("HAC standard errors require hac_lags to be set.")
+            targets = selected_targets(selected_assets)
+            return rolling_hac_se(
+                y=targets,
+                X=factor_design(factor),
+                window=window,
+                min_periods=min_periods,
+                expanding=expanding,
+                n_lags=hac_lags,
+                fit_intercept=fit_intercept,
+                penalty=factor_penalty,
+                weights=weights_snapshot,
+                denom_tol=denom_tol,
+                warn_invalid=warn_singular,
+            )
+
         def load_factor_adjusted_returns(
             selected_assets: Sequence[str] | None,
         ) -> pd.DataFrame:
@@ -858,6 +883,7 @@ class RollingOLS:
             )
 
         result._residual_loader = load_residuals
+        result._se_loader = load_standard_errors
         result._factor_adjusted_loader = load_factor_adjusted_returns
 
         return result

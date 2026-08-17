@@ -426,10 +426,9 @@ where `k` is the number of estimated coefficients, including the intercept when
 present. The statistic is undefined when `n_eff <= k`. Covariances are mapped
 back to original coefficient units after a standardized Ridge solve.
 
-This weighted sandwich is the normative HAC estimator. Until it is implemented,
-`get_se()` must raise when EWMA is active. An equal-weight approximation may be
-exposed only under a separate explicit name. It must never be returned silently
-by `get_se()`.
+This weighted sandwich is the normative HAC estimator. `get_se()` uses it for
+both equal-weight and EWMA fits. Each endpoint's residual block is reduced to
+its standard error and released before the next endpoint is evaluated.
 
 The implementation returns NaN, with one aggregated warning, when the bread is
 singular or when a negative estimated variance would otherwise produce a zero

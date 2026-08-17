@@ -102,6 +102,17 @@ def test_medium_tripwire_controls_exit_status(capsys):
     assert not compare_payloads({"records": [record(3.01)]}, baseline)
     non_comparable = {"records": [record(1.0, comparable=False)]}
     assert compare_payloads({"records": [record(30.0)]}, non_comparable)
+    hac_non_comparable = {
+        "metadata": {
+            "non_comparable_metrics": {
+                "get_se": "old HAC semantics",
+                "total": "includes old HAC",
+            }
+        },
+        "records": [record(1.0)],
+    }
+    assert compare_payloads({"records": [record(30.0)]}, hac_non_comparable)
     output = capsys.readouterr().out
     assert "excluded from gate: estimator semantics changed" in output
+    assert "metric exclusions: get_se: old HAC semantics" in output
     assert "no" in output

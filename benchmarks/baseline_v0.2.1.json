@@ -7,6 +7,10 @@
     "platform": "macOS-26.5.2-arm64-arm-64bit",
     "window": 252,
     "seed": 0,
+    "non_comparable_metrics": {
+      "get_se": "v0.2.1 HAC did not estimate the covariance of the reported beta",
+      "total": "includes the semantically non-comparable get_se measurement"
+    },
     "capture_status": {
       "complete_sizes": [
         "tiny",
