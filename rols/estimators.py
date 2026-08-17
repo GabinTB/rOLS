@@ -189,6 +189,30 @@ def _group_mask_columns(mask: np.ndarray) -> list[np.ndarray]:
     return groups
 
 
+def _selected_endpoint_pairs(
+    endpoint_positions: np.ndarray | None,
+    n_observations: int,
+    min_periods: int,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Map full-index endpoints to compact output positions."""
+    if endpoint_positions is None:
+        endpoints = np.arange(min_periods - 1, n_observations, dtype=np.intp)
+        return endpoints, endpoints, n_observations
+    endpoints = np.asarray(endpoint_positions)
+    if endpoints.ndim != 1 or not np.issubdtype(endpoints.dtype, np.integer):
+        raise ValueError("endpoint_positions must be a one-dimensional integer array")
+    endpoints = endpoints.astype(np.intp, copy=False)
+    if endpoints.size and (
+        endpoints[0] < min_periods - 1
+        or endpoints[-1] >= n_observations
+        or np.any(np.diff(endpoints) <= 0)
+    ):
+        raise ValueError(
+            "endpoint_positions must be strictly increasing and within valid endpoint bounds"
+        )
+    return endpoints, np.arange(endpoints.size, dtype=np.intp), endpoints.size
+
+
 def _effective_sample_size(weights: np.ndarray) -> float:
     """Scale-invariant Kish effective sample size for positive weight mass."""
     weight_mass = float(np.sum(weights))
@@ -396,6 +420,7 @@ def rolling_joint_solve(
     weights: np.ndarray | None = None,
     warn_singular: bool = True,
     cond_warn_threshold: float = 1e10,
+    endpoint_positions: np.ndarray | None = None,
 ) -> JointFitResult:
     """Fit one current-window joint model per endpoint and target.
 
@@ -427,6 +452,11 @@ def rolling_joint_solve(
         else regressor_values
     )
     n_parameters = design.shape[1]
+    selected_endpoints, output_positions, output_size = _selected_endpoint_pairs(
+        endpoint_positions,
+        n_observations,
+        min_periods,
+    )
 
     if penalty is None:
         penalty_matrix = np.zeros((n_parameters, n_parameters), dtype=np.float64)
@@ -455,13 +485,13 @@ def rolling_joint_solve(
         if supplied_weights.sum() <= 0:
             raise ValueError("weights must have positive sum")
 
-    coef = np.full((n_observations, n_slopes, n_targets), np.nan)
-    intercept = np.full((n_observations, n_targets), np.nan)
-    resid_endpoint = np.full((n_observations, n_targets), np.nan)
-    ssr = np.full((n_observations, n_targets), np.nan)
-    sst = np.full((n_observations, n_targets), np.nan)
-    n_used = np.full((n_observations, n_targets), np.nan)
-    n_eff = np.full((n_observations, n_targets), np.nan)
+    coef = np.full((output_size, n_slopes, n_targets), np.nan)
+    intercept = np.full((output_size, n_targets), np.nan)
+    resid_endpoint = np.full((output_size, n_targets), np.nan)
+    ssr = np.full((output_size, n_targets), np.nan)
+    sst = np.full((output_size, n_targets), np.nan)
+    n_used = np.full((output_size, n_targets), np.nan)
+    n_eff = np.full((output_size, n_targets), np.nan)
 
     def store_block(
         endpoint: int,
@@ -483,6 +513,7 @@ def rolling_joint_solve(
 
     def solve_grouped_endpoint(
         endpoint: int,
+        output_position: int,
         start: int,
         target_positions: np.ndarray,
         endpoint_weights: np.ndarray | None,
@@ -515,7 +546,7 @@ def rolling_joint_solve(
             if solved is None:
                 singular_count += group_size
             else:
-                store_block(endpoint, grouped_targets, solved)
+                store_block(output_position, grouped_targets, solved)
         return singular_count, ill_conditioned_count
 
     vectorizable_rolling = not expanding and np.isfinite(design).all() and n_observations >= window
@@ -524,8 +555,18 @@ def rolling_joint_solve(
     if vectorizable_rolling:
         clean_target_positions = np.flatnonzero(np.isfinite(target_values).all(axis=0))
         dirty_target_positions = np.flatnonzero(~np.isfinite(target_values).all(axis=0))
-        design_windows = _make_windows(design, window)
-        target_windows = _make_windows(target_values[:, clean_target_positions], window)
+        full_window_mask = selected_endpoints >= window - 1
+        full_endpoints = selected_endpoints[full_window_mask]
+        full_output_positions = output_positions[full_window_mask]
+        full_window_offsets = full_endpoints - window + 1
+        all_design_windows = _make_windows(design, window)
+        all_target_windows = _make_windows(target_values[:, clean_target_positions], window)
+        if endpoint_positions is None:
+            design_windows = all_design_windows
+            target_windows = all_target_windows
+        else:
+            design_windows = all_design_windows[full_window_offsets]
+            target_windows = all_target_windows[full_window_offsets]
         window_weights = (
             np.full(window, 1.0 / window)
             if supplied_weights is None
@@ -600,7 +641,6 @@ def rolling_joint_solve(
         if fit_intercept:
             parameters[:, 0, :] -= np.einsum("tk,tkn->tn", means[:, 1:], parameters[:, 1:, :])
         parameters[~valid_scales] = np.nan
-        endpoints = np.arange(parameters.shape[0]) + window - 1
         fitted_windows = np.einsum("twk,tkn->twn", design_windows, parameters)
         residual_windows = target_windows - fitted_windows
         window_ssr = np.einsum("w,twn->tn", window_weights, residual_windows**2)
@@ -612,35 +652,47 @@ def rolling_joint_solve(
             window_sst = np.einsum("w,twn->tn", window_weights, target_windows**2)
         for local_position, target_position in enumerate(clean_target_positions):
             if fit_intercept:
-                intercept[endpoints, target_position] = parameters[:, 0, local_position]
-                coef[endpoints, :, target_position] = parameters[:, 1:, local_position]
+                intercept[full_output_positions, target_position] = parameters[:, 0, local_position]
+                coef[full_output_positions, :, target_position] = parameters[:, 1:, local_position]
             else:
-                intercept[endpoints, target_position] = 0.0
-                coef[endpoints, :, target_position] = parameters[:, :, local_position]
-            resid_endpoint[endpoints, target_position] = residual_windows[:, -1, local_position]
-            ssr[endpoints, target_position] = window_ssr[:, local_position]
-            sst[endpoints, target_position] = window_sst[:, local_position]
-            n_used[endpoints, target_position] = window
-            n_eff[endpoints, target_position] = _effective_sample_size(window_weights)
+                intercept[full_output_positions, target_position] = 0.0
+                coef[full_output_positions, :, target_position] = parameters[:, :, local_position]
+            resid_endpoint[full_output_positions, target_position] = residual_windows[
+                :, -1, local_position
+            ]
+            ssr[full_output_positions, target_position] = window_ssr[:, local_position]
+            sst[full_output_positions, target_position] = window_sst[:, local_position]
+            n_used[full_output_positions, target_position] = window
+            n_eff[full_output_positions, target_position] = _effective_sample_size(window_weights)
 
-        early_stop = min(window - 1, n_observations)
-        for endpoint in range(min_periods - 1, early_stop):
+        early_mask = selected_endpoints < window - 1
+        for endpoint, output_position in zip(
+            selected_endpoints[early_mask],
+            output_positions[early_mask],
+            strict=True,
+        ):
             endpoint_weights = (
                 None if supplied_weights is None else supplied_weights[-(endpoint + 1) :]
             )
             singular, ill_conditioned = solve_grouped_endpoint(
                 endpoint,
+                output_position,
                 0,
                 np.arange(n_targets),
                 endpoint_weights,
             )
             n_singular += singular
             n_ill_conditioned += ill_conditioned
-        for endpoint in range(window - 1, n_observations):
+        for endpoint, output_position in zip(
+            full_endpoints,
+            full_output_positions,
+            strict=True,
+        ):
             start = endpoint - window + 1
             endpoint_weights = supplied_weights
             singular, ill_conditioned = solve_grouped_endpoint(
                 endpoint,
+                output_position,
                 start,
                 dirty_target_positions,
                 endpoint_weights,
@@ -648,13 +700,18 @@ def rolling_joint_solve(
             n_singular += singular
             n_ill_conditioned += ill_conditioned
     else:
-        for endpoint in range(min_periods - 1, n_observations):
+        for endpoint, output_position in zip(
+            selected_endpoints,
+            output_positions,
+            strict=True,
+        ):
             start = 0 if expanding else max(0, endpoint - window + 1)
             endpoint_weights = (
                 None if supplied_weights is None else supplied_weights[-(endpoint - start + 1) :]
             )
             singular, ill_conditioned = solve_grouped_endpoint(
                 endpoint,
+                output_position,
                 start,
                 np.arange(n_targets),
                 endpoint_weights,
@@ -692,6 +749,7 @@ def rolling_fwl_solve(
     params_only: bool = False,
     return_nuisance_coef: bool = True,
     residuals_only: bool = False,
+    endpoint_positions: np.ndarray | None = None,
 ) -> BatchedFitResult:
     """Fit independent factors by exact within-window FWL projection.
 
@@ -735,6 +793,11 @@ def rolling_fwl_solve(
     n_observations, n_targets = target_values.shape
     n_factors = factor_values.shape[1]
     n_controls = control_values.shape[1]
+    selected_endpoints, output_positions, output_size = _selected_endpoint_pairs(
+        endpoint_positions,
+        n_observations,
+        min_periods,
+    )
 
     supplied_weights = None
     if weights is not None:
@@ -746,7 +809,7 @@ def rolling_fwl_solve(
         if supplied_weights.sum() <= 0:
             raise ValueError("weights must have positive sum")
 
-    shape = (n_observations, n_factors, n_targets)
+    shape = (output_size, n_factors, n_targets)
     factor_coef = None if residuals_only else np.full(shape, np.nan)
     intercept = None if residuals_only else np.full(shape, np.nan)
     n_used = None if residuals_only or params_only else np.full(shape, np.nan)
@@ -756,16 +819,20 @@ def rolling_fwl_solve(
     reduced_ssr = None if params_only else np.full(shape, np.nan)
     n_eff = None if params_only else np.full(shape, np.nan)
     nuisance_coef = (
-        np.full((n_observations, n_factors, n_controls, n_targets), np.nan)
+        np.full((output_size, n_factors, n_controls, n_targets), np.nan)
         if return_nuisance_coef
         else None
     )
-    nuisance_resid_endpoint = None if params_only else np.full((n_observations, n_targets), np.nan)
+    nuisance_resid_endpoint = None if params_only else np.full((output_size, n_targets), np.nan)
     sufficient_statistics: list[PatternSufficientStatistics] = []
     n_singular = 0
     n_ill_conditioned = 0
 
-    for endpoint in range(min_periods - 1, n_observations):
+    for endpoint, output_position in zip(
+        selected_endpoints,
+        output_positions,
+        strict=True,
+    ):
         start = 0 if expanding else max(0, endpoint - window + 1)
         window_targets = target_values[start : endpoint + 1]
         window_factors = factor_values[start : endpoint + 1]
@@ -843,7 +910,7 @@ def rolling_fwl_solve(
                     if weighted_nuisance.shape[1]:
                         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
                             nuisance_endpoint_fit = complete_nuisance[-1] @ nuisance_target_coef
-                    nuisance_resid_endpoint[endpoint, target_output_positions] = (
+                    nuisance_resid_endpoint[output_position, target_output_positions] = (
                         window_targets[-1, target_positions] - nuisance_endpoint_fit
                     )
 
@@ -922,18 +989,20 @@ def rolling_fwl_solve(
                     (factor_positions.size, target_positions.size),
                 )
                 if factor_coef is not None and intercept is not None:
-                    factor_coef[endpoint][factor_index, target_index] = betas
+                    factor_coef[output_position][factor_index, target_index] = betas
                     if fit_intercept:
-                        intercept[endpoint][factor_index, target_index] = full_nuisance_coef[0]
+                        intercept[output_position][factor_index, target_index] = full_nuisance_coef[
+                            0
+                        ]
                     else:
                         intercept_values = np.where(valid_matrix, 0.0, np.nan)
-                        intercept[endpoint][factor_index, target_index] = intercept_values
+                        intercept[output_position][factor_index, target_index] = intercept_values
                 control_offset = int(fit_intercept)
                 if n_controls and nuisance_coef is not None:
                     control_values_block = full_nuisance_coef[
                         control_offset : control_offset + n_controls
                     ].transpose(1, 0, 2)
-                    nuisance_coef[endpoint][
+                    nuisance_coef[output_position][
                         factor_positions[:, None, None],
                         np.arange(n_controls)[None, :, None],
                         target_output_positions[None, None, :],
@@ -941,12 +1010,14 @@ def rolling_fwl_solve(
 
                 metric_valid = np.where(valid_matrix, 1.0, np.nan)
                 if n_used is not None:
-                    n_used[endpoint][factor_index, target_index] = observations_used * metric_valid
+                    n_used[output_position][factor_index, target_index] = (
+                        observations_used * metric_valid
+                    )
                 effective_count = _effective_sample_size(complete_weights)
                 if not residuals_only:
                     sufficient_statistics.append(
                         PatternSufficientStatistics(
-                            endpoint=endpoint,
+                            endpoint=output_position,
                             factor_positions=factor_positions.copy(),
                             target_positions=target_output_positions.copy(),
                             denominators=denominators.copy(),
@@ -959,12 +1030,16 @@ def rolling_fwl_solve(
 
                 if ssr is not None:
                     assert sst is not None and reduced_ssr is not None and n_eff is not None
-                    ssr[endpoint][factor_index, target_index] = group_ssr * metric_valid
-                    sst[endpoint][factor_index, target_index] = group_sst[None, :] * metric_valid
-                    reduced_ssr[endpoint][factor_index, target_index] = (
+                    ssr[output_position][factor_index, target_index] = group_ssr * metric_valid
+                    sst[output_position][factor_index, target_index] = (
+                        group_sst[None, :] * metric_valid
+                    )
+                    reduced_ssr[output_position][factor_index, target_index] = (
                         group_reduced_ssr[None, :] * metric_valid
                     )
-                    n_eff[endpoint][factor_index, target_index] = effective_count * metric_valid
+                    n_eff[output_position][factor_index, target_index] = (
+                        effective_count * metric_valid
+                    )
 
                 if resid_endpoint is not None and complete_case[-1]:
                     endpoint_targets = window_targets[-1, target_positions]
@@ -977,7 +1052,7 @@ def rolling_fwl_solve(
                             full_nuisance_coef,
                         )
                     endpoint_residuals = endpoint_targets[None, :] - fitted_endpoint
-                    resid_endpoint[endpoint][factor_index, target_index] = endpoint_residuals
+                    resid_endpoint[output_position][factor_index, target_index] = endpoint_residuals
 
     if warn_singular:
         _warn_singular(n_singular)
@@ -1387,6 +1462,7 @@ def rolling_hac_se(
     weights: np.ndarray | None = None,
     denom_tol: float = 1e-12,
     warn_invalid: bool = True,
+    endpoint_positions: np.ndarray | None = None,
 ) -> pd.DataFrame:
     """Compute factor HAC SEs from each endpoint's own current-window fit.
 
@@ -1415,6 +1491,11 @@ def rolling_hac_se(
     target_values = y.to_numpy(dtype=np.float64)
     regressor_values = X.to_numpy(dtype=np.float64)
     n_observations, n_targets = target_values.shape
+    selected_endpoints, output_positions, output_size = _selected_endpoint_pairs(
+        endpoint_positions,
+        n_observations,
+        min_periods,
+    )
     design = (
         np.column_stack([np.ones(n_observations), regressor_values])
         if fit_intercept
@@ -1451,10 +1532,14 @@ def rolling_hac_se(
         if supplied_weights.sum() <= 0:
             raise ValueError("weights must have positive sum")
 
-    standard_errors = np.full((n_observations, n_targets), np.nan)
+    standard_errors = np.full((output_size, n_targets), np.nan)
     n_invalid_bread = 0
     n_invalid_variance = 0
-    for endpoint in range(min_periods - 1, n_observations):
+    for endpoint, output_position in zip(
+        selected_endpoints,
+        output_positions,
+        strict=True,
+    ):
         start = 0 if expanding else max(0, endpoint - window + 1)
         window_targets = target_values[start : endpoint + 1]
         window_design = design[start : endpoint + 1]
@@ -1486,8 +1571,9 @@ def rolling_hac_se(
                 n_invalid_bread += target_positions.size
             n_invalid_variance += solved.n_invalid_hac_variance
             if solved.factor_se is not None:
-                standard_errors[endpoint, target_positions] = solved.factor_se
+                standard_errors[output_position, target_positions] = solved.factor_se
 
     if warn_invalid:
         _warn_invalid_hac(n_invalid_bread, n_invalid_variance)
-    return pd.DataFrame(standard_errors, index=y.index, columns=y.columns)
+    output_index = y.index if endpoint_positions is None else y.index[selected_endpoints]
+    return pd.DataFrame(standard_errors, index=output_index, columns=y.columns)

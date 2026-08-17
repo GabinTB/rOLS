@@ -7,6 +7,7 @@ import pytest
 from benchmarks.bench_rolling import (
     SIZE_GRID,
     BenchmarkConfig,
+    check_cadence_speedups,
     compare_payloads,
     make_panel,
     run_case,
@@ -116,3 +117,29 @@ def test_medium_tripwire_controls_exit_status(capsys):
     assert "excluded from gate: estimator semantics changed" in output
     assert "metric exclusions: get_se: old HAC semantics" in output
     assert "no" in output
+
+
+def test_medium_cadence_speedup_gate_and_storage_report(capsys):
+    def record(cadence: int, transform_seconds: float, output_size: int) -> dict:
+        return {
+            "size": "medium",
+            "nan_pattern": "structural",
+            "config": {
+                "lambda_": 0.0,
+                "ewma_halflife": None,
+                "mode": "batched",
+                "estimate_every": cadence,
+            },
+            "measurements": {
+                "transform": {"wall_seconds": transform_seconds},
+            },
+            "output_size_bytes": output_size,
+        }
+
+    baseline = record(1, 10.0, 1_000)
+    cadence = record(5, 2.0, 200)
+    assert check_cadence_speedups({"records": [baseline, cadence]})
+    assert "transform 5.00x, retained storage 5.00x" in capsys.readouterr().out
+
+    too_slow = record(5, 4.0, 200)
+    assert not check_cadence_speedups({"records": [baseline, too_slow]})

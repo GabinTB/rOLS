@@ -193,6 +193,13 @@ class RollingOLS:
     cache_size : int
         Maximum number of factors retained in each lazy result cache. Defaults
         to 1 so residual and inference access stays bounded for large panels.
+    estimate_every : int or str
+        Estimate only selected endpoints. An integer counts backwards from the
+        final observation; a pandas offset alias selects the last observation
+        present in each period. Windows still contain the original observations,
+        and ``hac_lags`` remains measured in observations, not cadence steps.
+        Public ``get_*`` accessors return the full index with NaN at skipped
+        endpoints; ``iter_beta()`` and ``iter_se()`` yield compact frames.
 
     Examples
     --------
@@ -237,6 +244,7 @@ class RollingOLS:
         ewma_halflife: int | None = None,
         cond_warn_threshold: float = 1e10,
         cache_size: int = 1,
+        estimate_every: int | str = 1,
     ) -> None:
         if ewma_halflife is not None and expanding:
             raise ValueError(
@@ -252,6 +260,18 @@ class RollingOLS:
             raise TypeError("cache_size must be an integer")
         if cache_size < 1:
             raise ValueError("cache_size must be at least 1")
+        if isinstance(estimate_every, bool) or not isinstance(estimate_every, (int, str)):
+            raise ValueError(f"estimate_every={estimate_every!r} must be a positive int or offset")
+        if isinstance(estimate_every, int):
+            if estimate_every < 1:
+                raise ValueError(f"estimate_every={estimate_every!r} must be at least 1")
+        else:
+            try:
+                pd.tseries.frequencies.to_offset(estimate_every)
+            except ValueError as error:
+                raise ValueError(
+                    f"estimate_every={estimate_every!r} is not a valid pandas offset alias"
+                ) from error
 
         self.window = window
         self.min_periods = min_periods if min_periods is not None else window
@@ -269,6 +289,7 @@ class RollingOLS:
         self.warn_singular = warn_singular
         self.cond_warn_threshold = cond_warn_threshold
         self.cache_size = cache_size
+        self.estimate_every = estimate_every
 
         self._is_fitted = False
         self._factor_cols: list[str] = []
@@ -277,11 +298,45 @@ class RollingOLS:
         self._factors: pd.DataFrame | None = None
         self._controls_fitted: pd.DataFrame | None = None
 
+    def _estimation_positions(self, index: pd.Index) -> np.ndarray:
+        """Return full-index positions retained by the configured cadence."""
+        n_observations = len(index)
+        if self.estimate_every == 1:
+            return np.arange(n_observations, dtype=np.intp)
+        first_valid = self.min_periods - 1
+        if n_observations <= first_valid:
+            return np.empty(0, dtype=np.intp)
+        if isinstance(self.estimate_every, int):
+            positions = np.arange(
+                n_observations - 1,
+                first_valid - 1,
+                -self.estimate_every,
+                dtype=np.intp,
+            )
+            return positions[::-1].copy()
+        if not isinstance(index, pd.DatetimeIndex):
+            raise ValueError(f"estimate_every={self.estimate_every!r} requires a DatetimeIndex")
+        position_series = pd.Series(np.arange(n_observations, dtype=np.intp), index=index)
+        try:
+            period_endpoints = position_series.resample(self.estimate_every).last().dropna()
+        except ValueError as error:
+            raise ValueError(
+                f"estimate_every={self.estimate_every!r} is not a valid pandas offset alias"
+            ) from error
+        positions = period_endpoints.to_numpy(dtype=np.intp)
+        return positions[positions >= first_valid]
+
     def _weights(self) -> np.ndarray | None:
         """EWMA observation weights for one full window, or None for equal weights."""
         if self.ewma_halflife is None:
             return None
         return _ewma_weights(self.ewma_halflife, self.window)
+
+    def _solver_endpoint_positions(self, index: pd.Index) -> np.ndarray | None:
+        """Keep the default solver path untouched when every endpoint is requested."""
+        if self.estimate_every == 1:
+            return None
+        return self._estimation_positions(index)
 
     def estimate_memory(
         self,
@@ -291,12 +346,13 @@ class RollingOLS:
     ) -> dict[str, int | str]:
         """Estimate persistent and per-cache memory before fitting a panel."""
         n_observations = len(targets)
+        n_stored_endpoints = len(self._estimation_positions(targets.index))
         n_targets = targets.shape[1]
         n_factors = factors.shape[1]
         n_controls = 0 if controls is None else controls.shape[1]
         float_bytes = np.dtype(np.float64).itemsize
-        factor_frame_bytes = n_observations * n_targets * n_factors * float_bytes
-        target_frame_bytes = n_observations * n_targets * float_bytes
+        factor_frame_bytes = n_stored_endpoints * n_targets * n_factors * float_bytes
+        target_frame_bytes = n_stored_endpoints * n_targets * float_bytes
 
         factor_validity = np.isfinite(factors.to_numpy(dtype=np.float64))
         if n_factors:
@@ -306,19 +362,22 @@ class RollingOLS:
             )
         else:
             n_factor_patterns = 0
-        pattern_target_bytes = n_observations * n_targets * max(1, n_factor_patterns) * float_bytes
+        pattern_target_bytes = (
+            n_stored_endpoints * n_targets * max(1, n_factor_patterns) * float_bytes
+        )
 
         estimates: dict[str, int | str] = {
             "betas": factor_frame_bytes,
             "intercepts": factor_frame_bytes,
             "n_used": pattern_target_bytes,
             "pattern_statistics": 3 * pattern_target_bytes
-            + n_observations * n_factors * float_bytes,
+            + n_stored_endpoints * n_factors * float_bytes,
             "retained_inputs": n_observations * (n_targets + n_factors + n_controls) * float_bytes,
             "on_demand_per_frame": target_frame_bytes,
             "on_demand_cache_bytes": self.cache_size * target_frame_bytes,
             "note": (
-                "Each lazy quantity costs cache_size * T * N * 8 bytes. "
+                "Each retained lazy quantity costs cache_size * n_selected * N * 8 bytes. "
+                "Full-index get_* output is expanded transiently on access. "
                 "Factor NaNs split sufficient-statistic patterns and increase storage."
             ),
         }
@@ -368,6 +427,7 @@ class RollingOLS:
                 weights=self._weights(),
                 warn_singular=False,
                 cond_warn_threshold=self.cond_warn_threshold,
+                endpoint_positions=self._solver_endpoint_positions(targets.index),
             )
             for chunk in chunks
         ]
@@ -635,11 +695,17 @@ class RollingOLS:
         asset_positions = {asset: position for position, asset in enumerate(asset_cols)}
         factor_penalty = self._penalty_matrix(n_controls, n_factors=1)
         controls_penalty = self._penalty_matrix(n_controls, n_factors=0)
+        estimated_positions = self._estimation_positions(assets.index)
+        solver_endpoint_positions = self._solver_endpoint_positions(assets.index)
+        stored_index = assets.index[estimated_positions]
 
         def selected_targets(selected_assets: Sequence[str] | None) -> pd.DataFrame:
             if selected_assets is None:
                 return assets
             return assets.loc[:, list(selected_assets)]
+
+        def stored_targets(selected_assets: Sequence[str] | None) -> pd.DataFrame:
+            return selected_targets(selected_assets).iloc[estimated_positions]
 
         def solve_snapshot(
             targets: pd.DataFrame,
@@ -663,6 +729,7 @@ class RollingOLS:
                     weights=weights_snapshot,
                     warn_singular=False,
                     cond_warn_threshold=cond_warn_threshold,
+                    endpoint_positions=solver_endpoint_positions,
                 )
                 for chunk in chunks
             ]
@@ -697,6 +764,7 @@ class RollingOLS:
                 cond_warn_threshold=cond_warn_threshold,
                 params_only=True,
                 return_nuisance_coef=return_control_betas,
+                endpoint_positions=solver_endpoint_positions,
             )
 
         result = RollingOLSResult(
@@ -709,6 +777,7 @@ class RollingOLS:
             expanding=self.expanding,
             hac_lags=self.hac_lags,
             cache_size=self.cache_size,
+            estimated_positions=estimated_positions,
         )
         result._path = "fwl" if self.lambda_ == 0 else "joint"
 
@@ -729,10 +798,10 @@ class RollingOLS:
                 beta_values = fwl_fit.factor_coef[:, factor_position, :]
                 intercept_values = fwl_fit.intercept[:, factor_position, :]
 
-            beta = pd.DataFrame(beta_values, index=assets.index, columns=assets.columns)
+            beta = pd.DataFrame(beta_values, index=stored_index, columns=assets.columns)
             intercept = pd.DataFrame(
                 intercept_values,
-                index=assets.index,
+                index=stored_index,
                 columns=assets.columns,
             )
             result._betas[fac] = beta
@@ -740,7 +809,7 @@ class RollingOLS:
             if fwl_fit is None:
                 result._n_used[fac] = pd.DataFrame(
                     n_used_values,
-                    index=assets.index,
+                    index=stored_index,
                     columns=assets.columns,
                 )
             result._factor_values[fac] = factors_snapshot[fac]
@@ -753,7 +822,7 @@ class RollingOLS:
                 direct_control_betas[fac] = {
                     control: pd.DataFrame(
                         control_coef[:, control_position, :],
-                        index=assets.index,
+                        index=stored_index,
                         columns=assets.columns,
                     )
                     for control_position, control in enumerate(self._control_cols)
@@ -787,7 +856,7 @@ class RollingOLS:
                 reduced_ssr,
                 fit.n_eff,
                 fit.n_used,
-                targets,
+                stored_targets(selected_assets),
                 n_controls,
             )
 
@@ -811,7 +880,7 @@ class RollingOLS:
                     factor_position=factor_positions[factor],
                     beta=result._betas[factor].loc[:, targets.columns],
                     statistics=fwl_fit.sufficient_statistics,
-                    assets=targets,
+                    assets=stored_targets(selected_assets),
                     n_controls=n_controls,
                     selected_target_positions=selected_positions,
                 )
@@ -840,13 +909,14 @@ class RollingOLS:
                     params_only=True,
                     return_nuisance_coef=False,
                     residuals_only=True,
+                    endpoint_positions=solver_endpoint_positions,
                 )
                 assert factor_fit.resid_endpoint is not None
                 residual_values = factor_fit.resid_endpoint[:, 0, :]
             else:
                 fit = solve_snapshot(targets, factor_design(factor), factor_penalty)
                 residual_values = fit.resid_endpoint
-            return pd.DataFrame(residual_values, index=targets.index, columns=targets.columns)
+            return pd.DataFrame(residual_values, index=stored_index, columns=targets.columns)
 
         def load_standard_errors(
             factor: str,
@@ -867,6 +937,7 @@ class RollingOLS:
                 weights=weights_snapshot,
                 denom_tol=denom_tol,
                 warn_invalid=warn_singular,
+                endpoint_positions=solver_endpoint_positions,
             )
 
         def load_factor_adjusted_returns(
@@ -874,11 +945,11 @@ class RollingOLS:
         ) -> pd.DataFrame:
             targets = selected_targets(selected_assets)
             if controls_snapshot is None:
-                return targets
+                return targets.iloc[estimated_positions]
             controls_fit = solve_snapshot(targets, controls_snapshot, controls_penalty)
             return pd.DataFrame(
                 controls_fit.resid_endpoint,
-                index=targets.index,
+                index=stored_index,
                 columns=targets.columns,
             )
 

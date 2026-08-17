@@ -46,6 +46,7 @@ class BenchmarkConfig:
     lambda_: float
     ewma_halflife: int | None
     mode: str = "batched"
+    estimate_every: int | str = 1
 
 
 SIZE_GRID = {
@@ -187,6 +188,8 @@ def _model_kwargs(config: BenchmarkConfig) -> dict[str, Any]:
     }
     if "mode" in inspect.signature(RollingOLS).parameters:
         kwargs["mode"] = config.mode
+    if "estimate_every" in inspect.signature(RollingOLS).parameters:
+        kwargs["estimate_every"] = config.estimate_every
     return kwargs
 
 
@@ -282,6 +285,7 @@ def run_grid(
                     config.lambda_,
                     config.ewma_halflife,
                     config.mode,
+                    config.estimate_every,
                 )
                 if key in completed:
                     continue
@@ -312,6 +316,7 @@ def _record_key(record: dict[str, Any]) -> tuple[Any, ...]:
         config["lambda_"],
         config["ewma_halflife"],
         config.get("mode", "batched"),
+        config.get("estimate_every", 1),
     )
 
 
@@ -382,6 +387,42 @@ def compare_payloads(current: dict[str, Any], baseline: dict[str, Any]) -> bool:
     return passed
 
 
+def check_cadence_speedups(payload: dict[str, Any]) -> bool:
+    """Report cadence time and storage ratios, gating medium k=5 cases."""
+    grouped: dict[tuple[Any, ...], dict[int | str, dict[str, Any]]] = {}
+    for record in payload["records"]:
+        config = record["config"]
+        key = (
+            record["size"],
+            record["nan_pattern"],
+            config["lambda_"],
+            config["ewma_halflife"],
+            config.get("mode", "batched"),
+        )
+        grouped.setdefault(key, {})[config.get("estimate_every", 1)] = record
+
+    passed = True
+    for key, records in grouped.items():
+        baseline = records.get(1)
+        if baseline is None:
+            continue
+        for cadence, record in records.items():
+            if cadence == 1:
+                continue
+            baseline_time = baseline["measurements"]["transform"]["wall_seconds"]
+            cadence_time = record["measurements"]["transform"]["wall_seconds"]
+            time_ratio = baseline_time / cadence_time
+            storage_ratio = baseline["output_size_bytes"] / record["output_size_bytes"]
+            case = "/".join(str(part) for part in (*key, cadence))
+            print(
+                f"# cadence {case}: transform {time_ratio:.2f}x, "
+                f"retained storage {storage_ratio:.2f}x"
+            )
+            if key[0] == "medium" and cadence == 5 and not 3.0 <= time_ratio <= 6.0:
+                passed = False
+    return passed
+
+
 def _format_seconds(value: float | None) -> str:
     return "null" if value is None else f"{value:.6f}"
 
@@ -399,6 +440,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="include lazy HAC standard-error computation in each benchmark case",
     )
+    parser.add_argument(
+        "--estimate-every",
+        default="1",
+        help="comma-separated integer cadences or pandas offset aliases",
+    )
     return parser.parse_args(argv)
 
 
@@ -411,14 +457,32 @@ def main(argv: list[str] | None = None) -> int:
     else:
         sizes = ["tiny", "small"]
     nan_patterns = args.nan_pattern or list(NAN_PATTERNS)
+    cadence_values: list[int | str] = []
+    for raw_value in args.estimate_every.split(","):
+        value = raw_value.strip()
+        if not value:
+            raise ValueError("--estimate-every contains an empty value")
+        cadence_values.append(int(value) if value.lstrip("-").isdigit() else value)
+    configs = tuple(
+        BenchmarkConfig(
+            lambda_=config.lambda_,
+            ewma_halflife=config.ewma_halflife,
+            mode=config.mode,
+            estimate_every=cadence,
+        )
+        for config in CONFIGS
+        for cadence in cadence_values
+    )
     payload = run_grid(
         sizes=sizes,
         nan_patterns=nan_patterns,
+        configs=configs,
         seed=args.seed,
         output=args.output,
         source_label=args.source_label,
         with_se=args.with_se or args.compare is not None,
     )
+    cadence_passed = check_cadence_speedups(payload)
     if args.output is not None:
         _write_json(args.output, payload)
     if args.compare is None:
@@ -426,10 +490,10 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(payload, indent=2))
         else:
             print(f"Wrote {len(payload['records'])} records to {args.output}")
-        return 0
+        return 0 if cadence_passed else 1
 
     baseline = json.loads(args.compare.read_text(encoding="utf-8"))
-    return 0 if compare_payloads(payload, baseline) else 1
+    return 0 if cadence_passed and compare_payloads(payload, baseline) else 1
 
 
 @pytest.mark.parametrize("size_name", ["tiny", "small"])

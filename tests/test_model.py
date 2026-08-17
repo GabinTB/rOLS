@@ -1,5 +1,7 @@
 """Tests for the RollingOLS model class."""
 
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,6 +9,30 @@ import pytest
 from rols.estimators import rolling_joint_solve, rolling_residualize
 from rols.model import RollingOLS
 from tests.oracle import oracle_fit_window, oracle_rolling
+
+
+def _cadence_panel() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Deterministic panel covering controls, EWMA, and structural target NaNs."""
+    rng = np.random.default_rng(214)
+    index = pd.date_range("2024-01-02", periods=100, freq="B")
+    factors = pd.DataFrame(
+        rng.normal(size=(len(index), 2)),
+        index=index,
+        columns=["factor_1", "factor_2"],
+    )
+    controls = pd.DataFrame(
+        rng.normal(size=(len(index), 2)),
+        index=index,
+        columns=["control_1", "control_2"],
+    )
+    targets = pd.DataFrame(
+        rng.normal(size=(len(index), 3)),
+        index=index,
+        columns=["asset_1", "asset_2", "asset_3"],
+    )
+    targets.iloc[:8, 0] = np.nan
+    targets.iloc[47:51, 1] = np.nan
+    return factors, controls, targets
 
 
 class TestRollingOLSInit:
@@ -1623,3 +1649,209 @@ class TestRollingOLSSingularWarnings:
         ols = RollingOLS(window=20, warn_singular=False)
         ols.fit_transform(factors, assets, controls=controls)
         assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn)
+
+
+class TestEstimationCadence:
+    """Sparse endpoint estimation preserves exact results and compact storage."""
+
+    model_kwargs = {
+        "window": 24,
+        "min_periods": 18,
+        "lambda_": 0.03,
+        "ewma_halflife": 8,
+        "hac_lags": 3,
+        "dtype": "float64",
+    }
+
+    @pytest.mark.parametrize("estimate_every", [5, 21, "W-FRI", "ME"])
+    def test_all_quantities_match_full_fit_bitwise(self, estimate_every):
+        factors, controls, targets = _cadence_panel()
+        full = RollingOLS(**self.model_kwargs).fit_transform(
+            factors,
+            targets,
+            controls,
+            return_control_betas=True,
+        )
+        sparse = RollingOLS(
+            **self.model_kwargs,
+            estimate_every=estimate_every,
+        ).fit_transform(
+            factors,
+            targets,
+            controls,
+            return_control_betas=True,
+        )
+        positions = sparse.estimated_positions
+        skipped = np.setdiff1d(np.arange(len(targets)), positions)
+        factor = "factor_1"
+        for accessor in (
+            "get_beta",
+            "get_intercept",
+            "get_signal",
+            "get_r2",
+            "get_partial_r2",
+            "get_residuals",
+            "get_se",
+            "get_tstat",
+            "get_n_used",
+            "get_dof",
+        ):
+            expected = getattr(full, accessor)(factor).iloc[positions]
+            sparse_values = getattr(sparse, accessor)(factor)
+            actual = sparse_values.iloc[positions]
+            pd.testing.assert_frame_equal(
+                actual,
+                expected,
+                check_exact=True,
+                check_freq=False,
+            )
+            assert sparse_values.iloc[skipped].isna().all().all()
+
+        pd.testing.assert_frame_equal(
+            sparse.get_control_beta(factor, "control_1").iloc[positions],
+            full.get_control_beta(factor, "control_1").iloc[positions],
+            check_exact=True,
+            check_freq=False,
+        )
+        pd.testing.assert_frame_equal(
+            sparse.get_factor_adjusted_returns().iloc[positions],
+            full.get_factor_adjusted_returns().iloc[positions],
+            check_exact=True,
+            check_freq=False,
+        )
+
+    @pytest.mark.parametrize("estimate_every", [5, 21])
+    def test_retained_storage_scales_with_selected_endpoints(self, estimate_every):
+        factors, controls, targets = _cadence_panel()
+        result = RollingOLS(
+            **self.model_kwargs,
+            estimate_every=estimate_every,
+        ).fit_transform(factors, targets, controls)
+        compact = result._betas["factor_1"]
+
+        assert len(compact) == len(result.estimated_positions)
+        assert compact.to_numpy(copy=False).nbytes == (
+            len(result.estimated_positions) * targets.shape[1] * np.dtype(np.float64).itemsize
+        )
+        assert compact.to_numpy(copy=False).nbytes < (
+            len(targets) * targets.shape[1] * np.dtype(np.float64).itemsize
+        )
+
+    def test_getters_expand_and_iterators_stay_compact(self):
+        factors, controls, targets = _cadence_panel()
+        result = RollingOLS(
+            **self.model_kwargs,
+            estimate_every=5,
+        ).fit_transform(factors, targets, controls)
+        positions = result.estimated_positions
+        skipped = np.setdiff1d(np.arange(len(targets)), positions)
+
+        full_beta = result.get_beta("factor_1")
+        assert full_beta.index.equals(targets.index)
+        assert full_beta.iloc[skipped].isna().all().all()
+        factor, compact_beta = next(result.iter_beta())
+        assert factor == "factor_1"
+        assert compact_beta.index.equals(targets.index[positions])
+        assert len(compact_beta) == len(positions)
+
+        full_se = result.get_se("factor_1")
+        assert full_se.index.equals(targets.index)
+        assert full_se.iloc[skipped].isna().all().all()
+        factor, compact_se = next(result.iter_se())
+        assert factor == "factor_1"
+        assert compact_se.index.equals(targets.index[positions])
+
+    def test_lagged_signal_uses_selected_beta_at_next_observation(self):
+        factors, controls, targets = _cadence_panel()
+        full = RollingOLS(
+            **self.model_kwargs,
+            lag_signal=True,
+        ).fit_transform(factors, targets, controls)
+        sparse = RollingOLS(
+            **self.model_kwargs,
+            estimate_every=5,
+            lag_signal=True,
+        ).fit_transform(factors, targets, controls)
+        signal_positions = sparse.estimated_positions + 1
+        signal_positions = signal_positions[signal_positions < len(targets)]
+
+        pd.testing.assert_frame_equal(
+            sparse.get_signal("factor_1").iloc[signal_positions],
+            full.get_signal("factor_1").iloc[signal_positions],
+            check_exact=True,
+            check_freq=False,
+        )
+
+    def test_default_and_explicit_one_are_bitwise_identical(self):
+        factors, controls, targets = _cadence_panel()
+        default = RollingOLS(**self.model_kwargs).fit_transform(factors, targets, controls)
+        explicit = RollingOLS(
+            **self.model_kwargs,
+            estimate_every=1,
+        ).fit_transform(factors, targets, controls)
+
+        for factor in factors:
+            for accessor in (
+                "get_beta",
+                "get_intercept",
+                "get_signal",
+                "get_r2",
+                "get_partial_r2",
+                "get_residuals",
+                "get_se",
+                "get_tstat",
+                "get_n_used",
+                "get_dof",
+            ):
+                pd.testing.assert_frame_equal(
+                    getattr(default, accessor)(factor),
+                    getattr(explicit, accessor)(factor),
+                    check_exact=True,
+                )
+
+    def test_last_observation_is_always_selected(self):
+        factors, controls, targets = _cadence_panel()
+        for cadence in (5, 21, "W-FRI", "ME"):
+            result = RollingOLS(
+                **self.model_kwargs,
+                estimate_every=cadence,
+            ).fit_transform(factors, targets, controls)
+            assert result.estimated_positions[-1] == len(targets) - 1
+
+    def test_holiday_shortened_week_selects_last_observation_present(self):
+        index = pd.date_range("2024-01-08", "2024-01-19", freq="B").drop(pd.Timestamp("2024-01-12"))
+        model = RollingOLS(window=2, min_periods=2, estimate_every="W-FRI")
+        positions = model._estimation_positions(index)
+
+        assert pd.Timestamp("2024-01-11") in index[positions]
+        assert pd.Timestamp("2024-01-19") in index[positions]
+
+    def test_joint_vectorized_solve_receives_only_selected_windows(self):
+        factors, controls, targets = _cadence_panel()
+        selected_positions = RollingOLS(
+            **self.model_kwargs,
+            estimate_every=5,
+        )._estimation_positions(targets.index)
+        expected_windows = int((selected_positions >= self.model_kwargs["window"] - 1).sum())
+        original_qr = np.linalg.qr
+        batch_sizes: list[int] = []
+
+        def recording_qr(values, *args, **kwargs):
+            if values.ndim == 3:
+                batch_sizes.append(values.shape[0])
+            return original_qr(values, *args, **kwargs)
+
+        with patch("rols.estimators.np.linalg.qr", side_effect=recording_qr):
+            RollingOLS(
+                **self.model_kwargs,
+                estimate_every=5,
+            ).fit_transform(factors[["factor_1"]], targets.fillna(0.0), controls)
+
+        assert batch_sizes
+        assert max(batch_sizes) == expected_windows
+        assert max(batch_sizes) < len(targets) - self.model_kwargs["window"] + 1
+
+    @pytest.mark.parametrize("value", [0, -1, "not-an-offset"])
+    def test_invalid_cadence_names_value(self, value):
+        with pytest.raises(ValueError, match=repr(value)):
+            RollingOLS(estimate_every=value)

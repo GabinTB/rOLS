@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import TypeVar
 
+import numpy as np
 import pandas as pd
 
 from .estimators import PatternSufficientStatistics
@@ -37,6 +38,7 @@ class RollingOLSResult:
     expanding: bool
     hac_lags: int | None
     cache_size: int = 1
+    estimated_positions: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.intp))
 
     # Primary outputs are ready when transform() returns.
     _betas: dict[str, pd.DataFrame] = field(default_factory=dict)
@@ -80,6 +82,10 @@ class RollingOLSResult:
             raise TypeError("cache_size must be an integer")
         if self.cache_size < 1:
             raise ValueError("cache_size must be at least 1")
+        positions = np.asarray(self.estimated_positions)
+        if positions.ndim != 1 or not np.issubdtype(positions.dtype, np.integer):
+            raise ValueError("estimated_positions must be a one-dimensional integer array")
+        self.estimated_positions = positions.astype(np.intp, copy=False)
 
     def _check_factor(self, factor: str) -> None:
         if factor not in self.factor_cols:
@@ -93,6 +99,10 @@ class RollingOLSResult:
         if assets is None:
             return values
         return values.loc[:, list(assets)]
+
+    def _full_index(self, values: pd.DataFrame) -> pd.DataFrame:
+        """Expand a compact endpoint frame without retaining the padded copy."""
+        return values if values.index.equals(self.index) else values.reindex(self.index)
 
     def _remember(
         self,
@@ -137,7 +147,7 @@ class RollingOLSResult:
     ) -> pd.DataFrame:
         """Rolling beta, optionally restricted to selected assets."""
         self._check_factor(factor)
-        return self._select_assets(self._betas[factor], assets)
+        return self._full_index(self._select_assets(self._betas[factor], assets))
 
     def get_intercept(
         self,
@@ -146,16 +156,22 @@ class RollingOLSResult:
     ) -> pd.DataFrame:
         """Rolling intercept for the model containing ``factor``."""
         self._check_factor(factor)
-        return self._select_assets(self._intercepts[factor], assets)
+        return self._full_index(self._select_assets(self._intercepts[factor], assets))
 
     def get_signal(
         self,
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Factor term in the fitted model, derived from beta and factor values."""
+        """Factor term in the fitted model, derived from beta and factor values.
+
+        With sparse cadence and ``lag_signal=True``, a beta estimated at endpoint
+        ``t`` contributes to the signal at observation ``t + 1``. The signal's
+        non-missing positions are therefore shifted one observation beyond the
+        estimated endpoint positions, preserving the existing no-lookahead lag.
+        """
         self._check_factor(factor)
-        beta = self._select_assets(self._betas[factor], assets)
+        beta = self.get_beta(factor, assets)
         factor_values = self._factor_values[factor]
         return (
             beta.shift(1).mul(factor_values, axis=0)
@@ -169,7 +185,7 @@ class RollingOLSResult:
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
         """Full-model rolling R², or adjusted R²."""
-        return self._statistics_for(factor, assets).r2
+        return self._full_index(self._statistics_for(factor, assets).r2)
 
     def get_partial_r2(
         self,
@@ -177,7 +193,7 @@ class RollingOLSResult:
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
         """Factor partial R², or its adjusted form."""
-        return self._statistics_for(factor, assets).partial_r2
+        return self._full_index(self._statistics_for(factor, assets).partial_r2)
 
     def get_residuals(
         self,
@@ -189,13 +205,14 @@ class RollingOLSResult:
         residuals = self._residual_cache.get(factor)
         if residuals is not None:
             self._residual_cache.move_to_end(factor)
-            return self._select_assets(residuals, assets)
+            return self._full_index(self._select_assets(residuals, assets))
         if self._residual_loader is None:
             raise RuntimeError("Residuals are not available.")
         residuals = self._residual_loader(factor, assets)
         if assets is not None:
-            return residuals
-        return self._remember(self._residual_cache, factor, residuals)
+            return self._full_index(residuals)
+        compact = self._remember(self._residual_cache, factor, residuals)
+        return self._full_index(compact)
 
     def get_dof(
         self,
@@ -203,7 +220,7 @@ class RollingOLSResult:
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
         """Residual degrees of freedom based on effective sample size."""
-        return self._statistics_for(factor, assets).dof
+        return self._full_index(self._statistics_for(factor, assets).dof)
 
     def get_n_used(
         self,
@@ -213,8 +230,8 @@ class RollingOLSResult:
         """Complete-case observation count for the model containing ``factor``."""
         self._check_factor(factor)
         if factor in self._n_used:
-            return self._select_assets(self._n_used[factor], assets)
-        return self._statistics_for(factor, assets).n_used
+            return self._full_index(self._select_assets(self._n_used[factor], assets))
+        return self._full_index(self._statistics_for(factor, assets).n_used)
 
     def get_factor_adjusted_returns(
         self,
@@ -222,13 +239,13 @@ class RollingOLSResult:
     ) -> pd.DataFrame:
         """Return controls-residualized targets, computed on first access."""
         if self._factor_adjusted_returns is not None:
-            return self._select_assets(self._factor_adjusted_returns, assets)
+            return self._full_index(self._select_assets(self._factor_adjusted_returns, assets))
         if self._factor_adjusted_loader is None:
             raise RuntimeError("factor_adjusted_returns not available.")
         values = self._factor_adjusted_loader(assets)
         if assets is None:
             self._factor_adjusted_returns = values
-        return values
+        return self._full_index(values)
 
     def get_control_beta(
         self,
@@ -246,7 +263,7 @@ class RollingOLSResult:
         if control not in self._control_betas[factor]:
             available = list(self._control_betas[factor])
             raise KeyError(f"Control '{control}' not found. Available controls: {available}")
-        return self._select_assets(self._control_betas[factor][control], assets)
+        return self._full_index(self._select_assets(self._control_betas[factor][control], assets))
 
     def get_factor_mimicking_returns(self, factor: str) -> pd.Series:
         """Return the single-target beta series for cross-sectional use."""
@@ -266,12 +283,12 @@ class RollingOLSResult:
             axis=1,
         )
 
-    def get_se(
+    def _standard_errors_for(
         self,
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Newey-West HAC standard errors held in a bounded LRU cache."""
+        """Return compact HAC output, using the bounded LRU cache."""
         self._check_factor(factor)
         if self.hac_lags is None:
             raise RuntimeError(
@@ -289,6 +306,14 @@ class RollingOLSResult:
             return standard_errors
         return self._remember(self._se_cache, factor, standard_errors)
 
+    def get_se(
+        self,
+        factor: str,
+        assets: Sequence[str] | None = None,
+    ) -> pd.DataFrame:
+        """Full-index Newey-West HAC SEs, with NaN at skipped endpoints."""
+        return self._full_index(self._standard_errors_for(factor, assets))
+
     def get_tstat(
         self,
         factor: str,
@@ -302,17 +327,17 @@ class RollingOLSResult:
         self,
         assets: Sequence[str] | None = None,
     ) -> Iterator[tuple[str, pd.DataFrame]]:
-        """Yield each factor's beta without materialising a combined panel."""
+        """Yield compact betas at computed endpoints for high-throughput iteration."""
         for factor in self.factor_cols:
-            yield factor, self.get_beta(factor, assets)
+            yield factor, self._select_assets(self._betas[factor], assets)
 
     def iter_se(
         self,
         assets: Sequence[str] | None = None,
     ) -> Iterator[tuple[str, pd.DataFrame]]:
-        """Compute and yield one factor's HAC standard errors at a time."""
+        """Compute and yield compact HAC SEs at computed endpoints."""
         for factor in self.factor_cols:
-            yield factor, self.get_se(factor, assets)
+            yield factor, self._standard_errors_for(factor, assets)
 
     def to_long(self, factor: str, include_se: bool = False) -> pd.DataFrame:
         """Return beta, signal, and R² for one factor in long format."""
