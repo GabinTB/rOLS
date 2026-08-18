@@ -169,6 +169,33 @@ class RollingOLS:
         Use expanding window instead of rolling.
     fit_intercept : bool
         Include an explicit intercept in every window fit. Defaults to True.
+    mode : {"batched", "joint"}
+        How multiple factors are modeled. ``"batched"`` (default) fits a
+        separate model ``y ~ 1 + controls + factor`` per factor — each beta is
+        conditional on the controls but **not** on the other factors, so
+        correlated factors will each absorb variation attributable to the
+        others. ``"joint"`` fits one model with every factor,
+        ``y ~ 1 + controls + factor_1 + ... + factor_K``, so each beta is
+        conditional on the controls and every other factor — the statistically
+        safer choice whenever factors are correlated. Which is faster depends
+        on ``lambda_``: under OLS (``lambda_ == 0``), batched uses the FWL
+        fast path, sharing one controls-only projection and one GEMM across
+        all K factors, and measured on this implementation it is at or faster
+        than joint at panel scale. Under Ridge (``lambda_ > 0``), FWL is
+        invalid (see ``lambda_`` below), so batched degrades to K separate
+        joint-equivalent solves — joint mode is then substantially cheaper,
+        since it is exactly one such solve. See ``docs/PERFORMANCE.md`` for
+        measured numbers in both regimes. Prefer joint for correctness when
+        factors are correlated; under Ridge it is also the faster choice. The
+        two modes coincide for a single factor or for factors
+        mutually orthogonal on the estimation sample. Stored on the result as
+        ``result.mode``.
+    warn_correlated_factors : bool
+        If True (default), emit one ``UserWarning`` when ``mode="batched"``
+        with more than one factor and any factor pair has sample
+        ``|correlation| > 0.3``, pointing at ``mode="joint"``. The correlation
+        is computed once on the full sample as a usage hint — it is not
+        per-window and does not affect estimation. Set False to suppress.
     lambda_ : float
         Ridge strength for the normalized weighted objective. Penalized
         regressors are standardized to unit weighted variance within each
@@ -717,8 +744,13 @@ class RollingOLS:
             Target returns. e.g. df[["AAPL", "MSFT", "GOOG"]]
         return_control_betas : bool
             If True (and controls were passed to fit()), also compute each
-            control's joint rolling beta via Frisch-Waugh-Lovell partitioning,
-            accessible through result.get_control_beta(). More expensive.
+            control's joint rolling beta, accessible through
+            result.get_control_beta(). In batched mode this is one joint fit
+            per factor, so a control's beta can vary by which factor is
+            named (see get_control_beta's docstring); in joint mode there is
+            one fit shared by every factor, so it does not vary. More
+            expensive in batched mode: one additional set of coefficients
+            per factor rather than one shared set.
 
         Returns
         -------

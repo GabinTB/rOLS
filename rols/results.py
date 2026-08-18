@@ -146,7 +146,15 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Rolling beta, optionally restricted to selected assets."""
+        """Coefficient on ``factor`` from the model selected by ``mode``.
+
+        In batched mode (the default), this is ``factor``'s coefficient from
+        ``y ~ 1 + controls + factor`` — conditional on the controls, not on
+        the other factors. In joint mode it is ``factor``'s coefficient from
+        the single model containing every factor. Computed eagerly at
+        ``transform()``, not cached lazily. NaN at any endpoint where fewer
+        than ``min_periods`` complete-case rows are available.
+        """
         self._check_factor(factor)
         return self._full_index(self._select_assets(self._betas[factor], assets))
 
@@ -155,7 +163,12 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Rolling intercept for the model containing ``factor``."""
+        """Intercept from the same fit as ``get_beta(factor)``.
+
+        Zero-filled (not NaN) when ``fit_intercept=False`` was used, since a
+        through-origin model has no intercept term to be missing. Computed
+        eagerly at ``transform()``; NaN wherever ``get_beta(factor)`` is NaN.
+        """
         self._check_factor(factor)
         return self._full_index(self._select_assets(self._intercepts[factor], assets))
 
@@ -185,7 +198,16 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Full-model rolling R², or adjusted R²."""
+        """R² of the full model containing ``factor``, on its complete-case sample.
+
+        In batched mode this is ``y ~ 1 + controls + factor``'s R²; in joint
+        mode it is the single all-factors model's R², identical across every
+        ``factor`` argument. Reports the adjusted statistic instead when
+        ``adj_r2=True`` was passed to the constructor. Derived lazily and
+        cached per factor (bounded by ``cache_size``). NaN wherever SST is at
+        or below ``denom_tol`` (e.g. a constant target) or the adjusted
+        statistic's residual degrees of freedom are not positive.
+        """
         return self._full_index(self._statistics_for(factor, assets).r2)
 
     def get_partial_r2(
@@ -193,7 +215,15 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Factor partial R², or its adjusted form."""
+        """Incremental R² that ``factor`` contributes over the model without it.
+
+        ``(SSR_reduced - SSR_full) / SSR_reduced``, both sums of squares
+        computed on the full model's complete-case sample so the two models
+        are compared on identical data. This is the informative number when
+        factors are correlated — unlike ``get_r2``, it isolates one factor's
+        marginal contribution rather than reporting the whole model's fit.
+        Adjusted when ``adj_r2=True``. Derived lazily and cached per factor.
+        """
         return self._full_index(self._statistics_for(factor, assets).partial_r2)
 
     def get_residuals(
@@ -201,7 +231,14 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Endpoint residuals, recomputed per factor and held in a bounded cache."""
+        """Endpoint residual ``y_t - fitted_t`` from the model containing ``factor``.
+
+        One residual per endpoint — the current window's own fit evaluated
+        at its own last row, not a full in-window residual series. NaN
+        wherever ``get_beta(factor)`` is NaN. Recomputed lazily per factor and
+        held in a bounded cache (``cache_size``); requesting an evicted factor
+        recomputes it rather than raising.
+        """
         self._check_factor(factor)
         residuals = self._residual_cache.get(factor)
         if residuals is not None:
@@ -220,7 +257,14 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Residual degrees of freedom based on effective sample size."""
+        """Residual degrees of freedom for the model containing ``factor``.
+
+        ``n_eff - p - fit_intercept``, where ``p`` is the number of slope
+        coefficients in the selected model (``len(controls) + 1`` in batched
+        mode, ``len(controls) + n_factors`` in joint mode) and ``n_eff`` is
+        the effective sample size (equals ``n_used`` under equal weighting;
+        smaller under EWMA). Derived lazily and cached per factor.
+        """
         return self._full_index(self._statistics_for(factor, assets).dof)
 
     def get_n_used(
@@ -228,7 +272,11 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Complete-case observation count for the model containing ``factor``."""
+        """Complete-case row count in the window backing ``get_beta(factor)``.
+
+        Counts raw observations, not the EWMA-weighted effective sample size
+        (see ``get_dof`` for that). NaN wherever no estimate was produced.
+        """
         self._check_factor(factor)
         if factor in self._n_used:
             return self._full_index(self._select_assets(self._n_used[factor], assets))
