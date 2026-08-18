@@ -550,6 +550,7 @@ full detail behind each row.
 | `get_control_beta` omitted the named factor from the residualization set | Control beta comes from the joint fit that includes the named factor | Values change; batched-mode control betas now correctly vary by factor |
 | `get_factor_mimicking_returns()` / `get_all_factor_mimicking_returns()` | Removed (F13) | Renamed a time-series rolling beta; see [Out of scope](#out-of-scope) |
 | No input validation on `window`, `min_periods`, `lambda_`, etc. | Invalid constructor arguments raise `ValueError` at construction | Code passing invalid values now fails fast instead of producing silent NaNs |
+| Factors, controls, and targets were aligned positionally (NumPy) or by label (pandas), depending on the internal path taken | Index must be unique, monotonically increasing, and identical across all three DataFrames; a `ValueError` is raised at fit time otherwise | Code passing permuted, duplicate, or mismatched indexes now raises instead of silently returning mispaired results |
 
 ---
 
