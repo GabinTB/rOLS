@@ -20,7 +20,7 @@ science to forcing factors; and adaptively filtering signals in real time.
 | Downloads | [![Downloads](https://img.shields.io/pypi/dm/rols)](https://pypi.org/project/rols/) |
 | GitHub Stars | [![Stars](https://img.shields.io/github/stars/GabinTB/rOLS?style=social)](https://github.com/GabinTB/rOLS) |
 
-> **v0.3.0 is a correctness release.** An independent audit found that v0.2.1
+> **v0.3.x is a correctness release.** An independent audit found that v0.2.1
 > and earlier estimated a statistically inconsistent model — see
 > [Migration from v0.2.x](#migration-from-v02x) and
 > [`CHANGELOG.md`](CHANGELOG.md). If you have v0.2.x estimates in production,
@@ -563,11 +563,11 @@ dtype of the regression itself.
 ## Migration from v0.2.x
 
 v0.2.1 and earlier estimated a statistically inconsistent model. The table
-below is what to expect when re-running old code against v0.3.0 — see
+below is what to expect when re-running old code against v0.3.x — see
 `CHANGELOG.md` and [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) for the
 full detail behind each row.
 
-| v0.2.x behaviour | v0.3.0 behaviour | What to expect |
+| v0.2.x behaviour | v0.3.x behaviour | What to expect |
 |---|---|---|
 | Factor betas used centred `cov/var`; control residualization and HAC used through-origin systems | One consistent model per fit, `fit_intercept=True` by default | Betas, residuals, and R² now describe the same regression; numbers change |
 | With controls, a second rolling regression re-rolled first-pass residuals | One direct current-window joint (or FWL) solve | Warm-up halves: first estimate at `min_periods`, not `2 × min_periods` |
@@ -625,7 +625,7 @@ updating was considered and rejected — see
   differential test.
 - [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — cost model, memory
   arithmetic, and measured benchmark numbers.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in v0.3.0 and why.
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in v0.3.x and why.
 - [`.claude/audits/20260813/`](.claude/audits/20260813/) — the independent
   audit that drove this release, including the finding each CHANGELOG entry
   references.
