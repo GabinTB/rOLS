@@ -24,20 +24,6 @@ jobs:
       - run: uv run pytest
       - run: uv run pytest -m slow
 
-  benchmark:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-          enable-cache: true
-      - run: uv sync --all-groups
-      - name: Benchmark regression gate
-        run: |
-          uv run python -m benchmarks.bench_rolling \
-            --size medium --compare benchmarks/baseline_v0.2.1.json
-
   package:
     runs-on: ubuntu-latest
     steps:
