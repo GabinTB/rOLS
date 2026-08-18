@@ -955,9 +955,15 @@ class TestRollingOLSMissingData:
         alone = RollingOLS(**options).fit_transform(factors, assets[["unaffected"]])
 
         for getter in ("get_beta", "get_intercept", "get_residuals", "get_r2", "get_n_used"):
-            np.testing.assert_array_equal(
+            # Different pattern-grouping paths under EWMA can produce sub-machine-epsilon
+            # rounding differences; assert_allclose at 1e-12 is tight enough to catch
+            # any real isolation failure while tolerating floating-point noise.
+            np.testing.assert_allclose(
                 getattr(together, getter)("factor")["unaffected"],
                 getattr(alone, getter)("factor")["unaffected"],
+                rtol=1e-12,
+                atol=1e-12,
+                equal_nan=True,
             )
 
     @pytest.mark.parametrize("ewma_halflife", [None, 2])
