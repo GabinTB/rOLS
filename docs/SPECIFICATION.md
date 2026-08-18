@@ -124,12 +124,15 @@ joint solve in differential tests. FWL is not used for penalized regression.
 
 ## 4. Multiple-factor modes
 
-rOLS supports two explicit modes.
+rOLS supports two modes.  **When more than one factor is supplied, `mode` must
+be given explicitly**; omitting it raises `ValueError`.  The two estimands
+differ whenever factors are correlated, and the library does not choose
+silently.  For a single factor the modes coincide and `mode` defaults to
+`"batched"` when omitted.
 
 ### Batched mode
 
-`mode="batched"` is the default. For each factor `j`, rOLS estimates a separate
-model:
+`mode="batched"`. For each factor `j`, rOLS estimates a separate model:
 
 $$
 y_{i,s}
@@ -165,7 +168,9 @@ the controls and all factors.
 
 > **v0.2.1 deviates:** it implements batched independent regressions but
 > describes the package as multi-factor without naming that distinction. It
-> does not provide an explicit joint mode.
+> does not provide an explicit joint mode, and does not require the caller to
+> choose an estimand.  **v0.3.0** makes the choice explicit: `mode` is required
+> for multi-factor calls, raising `ValueError` when omitted.
 
 ## 5. Ridge regression
 

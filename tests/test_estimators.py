@@ -125,6 +125,7 @@ class TestJointSolverConditioning:
             dtype="float64",
             asset_chunk_size=1,
             cond_warn_threshold=1e10,
+            mode="batched",
         )
         with pytest.warns(RuntimeWarning, match="ill-conditioned") as captured:
             model.fit_transform(design[["x1"]], targets, controls=design[["x2"]])

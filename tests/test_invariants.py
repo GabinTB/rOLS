@@ -82,9 +82,9 @@ class TestR2Reproducibility:
 
     def test_no_controls_fwl_path_r2_matches_raw_ssr_sst(self):
         factors, _, targets = _random_panel(n_factors=1, n_controls=0, nan_gap=True)
-        result = RollingOLS(window=15, min_periods=10, dtype="float64").fit_transform(
-            factors, targets
-        )
+        result = RollingOLS(
+            window=15, min_periods=10, dtype="float64", mode="batched"
+        ).fit_transform(factors, targets)
         design = factors[["f0"]]
         raw = rolling_joint_solve(
             targets,
@@ -127,12 +127,12 @@ class TestScaleEquivariance:
         factors, controls, targets = _random_panel(n_factors=1, n_controls=1, seed=11)
         scale = 4.0
 
-        original = RollingOLS(window=15, dtype="float64").fit_transform(
+        original = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
             factors, targets, controls=controls, return_control_betas=True
         )
         scaled_factors = factors.copy()
         scaled_factors["f0"] *= scale
-        scaled = RollingOLS(window=15, dtype="float64").fit_transform(
+        scaled = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
             scaled_factors, targets, controls=controls, return_control_betas=True
         )
 
@@ -183,14 +183,14 @@ class TestLocationInvariance:
         factors, controls, targets = _random_panel(n_factors=1, n_controls=1, seed=12)
         shift = 100.0
 
-        original = RollingOLS(window=15, fit_intercept=True, dtype="float64").fit_transform(
-            factors, targets, controls=controls
-        )
+        original = RollingOLS(
+            window=15, fit_intercept=True, dtype="float64", mode="batched"
+        ).fit_transform(factors, targets, controls=controls)
         shifted_factors = factors.copy()
         shifted_factors["f0"] += shift
-        shifted = RollingOLS(window=15, fit_intercept=True, dtype="float64").fit_transform(
-            shifted_factors, targets, controls=controls
-        )
+        shifted = RollingOLS(
+            window=15, fit_intercept=True, dtype="float64", mode="batched"
+        ).fit_transform(shifted_factors, targets, controls=controls)
 
         beta_original = original.get_beta("f0")
         beta_shifted = shifted.get_beta("f0")
@@ -219,10 +219,10 @@ class TestPermutationInvariance:
         factors, controls, targets = _random_panel(n_targets=5, seed=13)
         order = ["a3", "a0", "a4", "a1", "a2"]
 
-        original = RollingOLS(window=15, dtype="float64").fit_transform(
+        original = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
             factors, targets, controls=controls, return_control_betas=True
         )
-        permuted = RollingOLS(window=15, dtype="float64").fit_transform(
+        permuted = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
             factors, targets[order], controls=controls, return_control_betas=True
         )
 
@@ -241,12 +241,12 @@ class TestCrossAssetIsolation:
     def test_adding_all_nan_asset_leaves_other_assets_bitwise_unchanged(self):
         factors, controls, targets = _random_panel(n_targets=3, seed=14)
 
-        baseline = RollingOLS(window=15, dtype="float64").fit_transform(
+        baseline = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
             factors, targets, controls=controls
         )
         augmented_targets = targets.copy()
         augmented_targets["a_nan"] = np.nan
-        augmented = RollingOLS(window=15, dtype="float64").fit_transform(
+        augmented = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
             factors, augmented_targets, controls=controls
         )
 
@@ -261,11 +261,11 @@ class TestChunkInvariance:
     @pytest.mark.parametrize("asset_chunk_size", [1, 7, 1000])
     def test_chunk_size_does_not_change_results(self, asset_chunk_size):
         factors, controls, targets = _random_panel(n_targets=9, seed=15)
-        baseline = RollingOLS(window=15, dtype="float64", asset_chunk_size=100).fit_transform(
-            factors, targets, controls=controls
-        )
+        baseline = RollingOLS(
+            window=15, dtype="float64", asset_chunk_size=100, mode="batched"
+        ).fit_transform(factors, targets, controls=controls)
         chunked = RollingOLS(
-            window=15, dtype="float64", asset_chunk_size=asset_chunk_size
+            window=15, dtype="float64", asset_chunk_size=asset_chunk_size, mode="batched"
         ).fit_transform(factors, targets, controls=controls)
 
         for factor in factors.columns:
@@ -277,7 +277,9 @@ class TestChunkInvariance:
 class TestSubsetInvariance:
     def test_transform_subset_matches_transform_full_restricted(self):
         factors, controls, targets = _random_panel(n_targets=4, seed=16)
-        model = RollingOLS(window=15, dtype="float64").fit(factors, controls=controls)
+        model = RollingOLS(window=15, dtype="float64", mode="batched").fit(
+            factors, controls=controls
+        )
 
         full_result = model.transform(targets)
         subset_result = model.transform(targets[["a0", "a1"]])
@@ -331,11 +333,11 @@ class TestCadenceInvariance:
     def test_cadence_matches_full_fit_sliced(self, estimate_every):
         factors, controls, targets = _random_panel(n_observations=80, seed=18)
 
-        full = RollingOLS(window=15, dtype="float64", estimate_every=1).fit_transform(
-            factors, targets, controls=controls
-        )
+        full = RollingOLS(
+            window=15, dtype="float64", estimate_every=1, mode="batched"
+        ).fit_transform(factors, targets, controls=controls)
         cadenced = RollingOLS(
-            window=15, dtype="float64", estimate_every=estimate_every
+            window=15, dtype="float64", estimate_every=estimate_every, mode="batched"
         ).fit_transform(factors, targets, controls=controls)
 
         for factor in factors.columns:
@@ -349,16 +351,16 @@ class TestLazyInvariance:
     def test_accessor_values_independent_of_call_order(self):
         factors, controls, targets = _random_panel(n_factors=2, n_controls=1, seed=19)
 
-        forward = RollingOLS(window=15, hac_lags=3, dtype="float64", cache_size=1).fit_transform(
-            factors, targets, controls=controls, return_control_betas=True
-        )
+        forward = RollingOLS(
+            window=15, hac_lags=3, dtype="float64", cache_size=1, mode="batched"
+        ).fit_transform(factors, targets, controls=controls, return_control_betas=True)
         beta_f0_first = forward.get_beta("f0")
         se_f0_first = forward.get_se("f0")
         r2_f1_first = forward.get_r2("f1")
 
-        backward = RollingOLS(window=15, hac_lags=3, dtype="float64", cache_size=1).fit_transform(
-            factors, targets, controls=controls, return_control_betas=True
-        )
+        backward = RollingOLS(
+            window=15, hac_lags=3, dtype="float64", cache_size=1, mode="batched"
+        ).fit_transform(factors, targets, controls=controls, return_control_betas=True)
         r2_f1_second = backward.get_r2("f1")
         se_f0_second = backward.get_se("f0")
         beta_f0_second = backward.get_beta("f0")
@@ -378,10 +380,10 @@ class TestDtypePrecision:
     def test_float32_matches_float64_within_tolerance(self):
         factors, controls, targets = _random_panel(n_factors=2, n_controls=1, seed=20)
 
-        result_32 = RollingOLS(window=15, dtype="float32").fit_transform(
+        result_32 = RollingOLS(window=15, dtype="float32", mode="batched").fit_transform(
             factors, targets, controls=controls
         )
-        result_64 = RollingOLS(window=15, dtype="float64").fit_transform(
+        result_64 = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
             factors, targets, controls=controls
         )
 
@@ -401,7 +403,7 @@ class TestDtypePrecision:
         silently downcast to the input storage dtype.
         """
         factors, controls, targets = _random_panel(n_factors=1, n_controls=1, seed=21)
-        result_32 = RollingOLS(window=15, dtype="float32").fit_transform(
+        result_32 = RollingOLS(window=15, dtype="float32", mode="batched").fit_transform(
             factors, targets, controls=controls
         )
         assert result_32.get_beta("f0").to_numpy().dtype == np.float64

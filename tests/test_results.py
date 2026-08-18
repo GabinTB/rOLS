@@ -18,7 +18,7 @@ class TestRollingOLSResultGetters:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
-        ols = RollingOLS(window=20, hac_lags=3)
+        ols = RollingOLS(window=20, hac_lags=3, mode="batched")
         result = ols.fit_transform(factors, assets)
         return result
 
@@ -118,7 +118,7 @@ class TestRollingOLSResultHAC:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, hac_lags=5)
+        ols = RollingOLS(window=20, hac_lags=5, mode="batched")
         result = ols.fit_transform(factors, assets)
         return result
 
@@ -130,7 +130,7 @@ class TestRollingOLSResultHAC:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, hac_lags=None)
+        ols = RollingOLS(window=20, hac_lags=None, mode="batched")
         result = ols.fit_transform(factors, assets)
         return result
 
@@ -206,7 +206,7 @@ class TestRollingOLSResultLongFormat:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=10, hac_lags=2)
+        ols = RollingOLS(window=10, hac_lags=2, mode="batched")
         result = ols.fit_transform(factors, assets)
         return result
 
@@ -287,7 +287,7 @@ class TestRollingOLSResultConsistency:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets)
         return result
 
@@ -331,7 +331,7 @@ class TestRollingOLSResultRanges:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20, adj_r2=False)
+        ols = RollingOLS(window=20, adj_r2=False, mode="batched")
         result = ols.fit_transform(factors, assets)
         return result
 
@@ -374,7 +374,7 @@ class TestRollingOLSResultFactorAdjustedReturns:
     def test_shape_with_controls(self):
         """Returns a DataFrame of shape (T, N_assets) when controls are present."""
         factors, controls, assets = self._data()
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls)
 
         far = result.get_factor_adjusted_returns()
@@ -385,7 +385,7 @@ class TestRollingOLSResultFactorAdjustedReturns:
     def test_differs_from_original_with_controls(self):
         """With controls, factor-adjusted returns differ from raw asset returns."""
         factors, controls, assets = self._data()
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls)
 
         far = result.get_factor_adjusted_returns()
@@ -398,7 +398,7 @@ class TestRollingOLSResultFactorAdjustedReturns:
     def test_equals_original_without_controls(self):
         """Without controls, factor-adjusted returns equal the original returns."""
         factors, _, assets = self._data()
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         far = result.get_factor_adjusted_returns()
@@ -407,7 +407,7 @@ class TestRollingOLSResultFactorAdjustedReturns:
     def test_differs_from_regression_residuals(self):
         """FWL step 2 (controls only) differs from get_residuals (step 3)."""
         factors, controls, assets = self._data()
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls)
 
         far = result.get_factor_adjusted_returns()
@@ -430,7 +430,7 @@ class TestRollingOLSResultControlBetas:
         controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         return ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
     def test_get_control_beta_shape(self, setup_with_control_betas):
@@ -462,7 +462,7 @@ class TestRollingOLSResultControlBetas:
         controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls)
 
         with pytest.raises(RuntimeError):
@@ -475,7 +475,7 @@ class TestRollingOLSResultControlBetas:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, return_control_betas=True)
 
         with pytest.raises(RuntimeError):

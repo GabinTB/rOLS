@@ -41,7 +41,7 @@ class TestRollingOLSInit:
 
     def test_default_initialization(self):
         """Test default parameter initialization."""
-        ols = RollingOLS()
+        ols = RollingOLS(mode="batched")
         assert ols.window == 252
         assert ols.min_periods == 252
         assert ols.expanding is False
@@ -64,6 +64,7 @@ class TestRollingOLSInit:
             adj_r2=True,
             lag_signal=True,
             hac_lags=5,
+            mode="batched",
         )
         assert ols.window == 100
         assert ols.min_periods == 50
@@ -77,62 +78,62 @@ class TestRollingOLSInit:
 
     def test_min_periods_defaults_to_window(self):
         """Test that min_periods defaults to window."""
-        ols = RollingOLS(window=100)
+        ols = RollingOLS(window=100, mode="batched")
         assert ols.min_periods == 100
 
     def test_negative_lambda_raises(self):
         with pytest.raises(ValueError, match="non-negative"):
-            RollingOLS(lambda_=-0.1)
+            RollingOLS(lambda_=-0.1, mode="batched")
 
     # --- Constructor validation added in Task 20 (F17, F18, F19) ---
 
     @pytest.mark.parametrize("window", [0, -1, -100])
     def test_invalid_window_raises(self, window):
         with pytest.raises(ValueError, match=repr(window)):
-            RollingOLS(window=window)
+            RollingOLS(window=window, mode="batched")
 
     @pytest.mark.parametrize("min_periods", [0, -1, -5])
     def test_invalid_min_periods_raises(self, min_periods):
         with pytest.raises(ValueError, match=repr(min_periods)):
-            RollingOLS(window=20, min_periods=min_periods)
+            RollingOLS(window=20, min_periods=min_periods, mode="batched")
 
     def test_min_periods_exceeds_window_rolling_raises(self):
         with pytest.raises(ValueError, match="exceeds window"):
-            RollingOLS(window=10, min_periods=11)
+            RollingOLS(window=10, min_periods=11, mode="batched")
 
     def test_min_periods_exceeds_window_expanding_ok(self):
         """min_periods > window is fine in expanding mode."""
-        ols = RollingOLS(window=10, min_periods=50, expanding=True)
+        ols = RollingOLS(window=10, min_periods=50, expanding=True, mode="batched")
         assert ols.min_periods == 50
 
     @pytest.mark.parametrize("ewma_halflife", [0, -1, -10])
     def test_invalid_ewma_halflife_raises(self, ewma_halflife):
         with pytest.raises(ValueError, match=repr(ewma_halflife)):
-            RollingOLS(ewma_halflife=ewma_halflife)
+            RollingOLS(ewma_halflife=ewma_halflife, mode="batched")
 
     @pytest.mark.parametrize("hac_lags", [-1, -5])
     def test_invalid_hac_lags_raises(self, hac_lags):
         with pytest.raises(ValueError, match=repr(hac_lags)):
-            RollingOLS(hac_lags=hac_lags)
+            RollingOLS(hac_lags=hac_lags, mode="batched")
 
     def test_valid_hac_lags_zero(self):
         """hac_lags=0 is accepted (Eicker-White sandwich)."""
-        ols = RollingOLS(window=20, hac_lags=0)
+        ols = RollingOLS(window=20, hac_lags=0, mode="batched")
         assert ols.hac_lags == 0
 
     def test_valid_window_one(self):
         """window=1 is accepted."""
-        ols = RollingOLS(window=1)
+        ols = RollingOLS(window=1, mode="batched")
         assert ols.window == 1
 
     def test_valid_min_periods_equals_window(self):
         """min_periods == window is accepted."""
-        ols = RollingOLS(window=20, min_periods=20)
+        ols = RollingOLS(window=20, min_periods=20, mode="batched")
         assert ols.min_periods == 20
 
     def test_valid_lambda_zero(self):
         """lambda_=0 is accepted."""
-        ols = RollingOLS(lambda_=0.0)
+        ols = RollingOLS(lambda_=0.0, mode="batched")
         assert ols.lambda_ == 0.0
 
 
@@ -147,7 +148,7 @@ class TestNaNContractAndBoundaryBug:
         factors.iloc[2] = np.nan  # inject X NaN → triggers per-column fallback
         assets = pd.DataFrame(rng.standard_normal((T, 1)), columns=["a1"])
         # Must not raise IndexError.
-        result = RollingOLS(window=W, min_periods=mp).fit_transform(factors, assets)
+        result = RollingOLS(window=W, min_periods=mp, mode="batched").fit_transform(factors, assets)
         beta = result.get_beta("f1")
         # Can only produce output at t >= min_periods - 1; first two rows are NaN.
         assert beta.iloc[: mp - 1].isna().all().all()
@@ -158,7 +159,7 @@ class TestNaNContractAndBoundaryBug:
         W = 20
         factors = pd.DataFrame(rng.standard_normal((W, 1)), columns=["f1"])
         assets = pd.DataFrame(rng.standard_normal((W, 1)), columns=["a1"])
-        result = RollingOLS(window=W, min_periods=W).fit_transform(factors, assets)
+        result = RollingOLS(window=W, min_periods=W, mode="batched").fit_transform(factors, assets)
         beta = result.get_beta("f1")
         assert beta.iloc[:-1].isna().all().all()
         assert np.isfinite(beta.iloc[-1].values).all()
@@ -169,7 +170,7 @@ class TestNaNContractAndBoundaryBug:
         T, W = 8, 20
         factors = pd.DataFrame(rng.standard_normal((T, 1)), columns=["f1"])
         assets = pd.DataFrame(rng.standard_normal((T, 1)), columns=["a1"])
-        result = RollingOLS(window=W, min_periods=W).fit_transform(factors, assets)
+        result = RollingOLS(window=W, min_periods=W, mode="batched").fit_transform(factors, assets)
         assert result.get_beta("f1").isna().all().all()
 
     def test_t_equals_min_periods_single_estimate(self):
@@ -178,7 +179,7 @@ class TestNaNContractAndBoundaryBug:
         mp, W = 15, 30
         factors = pd.DataFrame(rng.standard_normal((mp, 1)), columns=["f1"])
         assets = pd.DataFrame(rng.standard_normal((mp, 1)), columns=["a1"])
-        result = RollingOLS(window=W, min_periods=mp).fit_transform(factors, assets)
+        result = RollingOLS(window=W, min_periods=mp, mode="batched").fit_transform(factors, assets)
         beta = result.get_beta("f1")
         assert beta.iloc[:-1].isna().all().all()
         assert np.isfinite(beta.iloc[-1].values).all()
@@ -202,8 +203,12 @@ class TestNaNContractAndBoundaryBug:
         factors_full = pd.DataFrame({"f1": f})
         assets_ynan = pd.DataFrame({"a1": a_nan})
 
-        r_xnan = RollingOLS(window=W, min_periods=mp).fit_transform(factors_xnan, assets_full)
-        r_ynan = RollingOLS(window=W, min_periods=mp).fit_transform(factors_full, assets_ynan)
+        r_xnan = RollingOLS(window=W, min_periods=mp, mode="batched").fit_transform(
+            factors_xnan, assets_full
+        )
+        r_ynan = RollingOLS(window=W, min_periods=mp, mode="batched").fit_transform(
+            factors_full, assets_ynan
+        )
 
         # The NaN *pattern* (which endpoints are emitted) should match.
         beta_xnan = r_xnan.get_beta("f1")
@@ -227,7 +232,7 @@ class TestRollingOLSFit:
         T = 100
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         ols.fit(factors)
 
         assert ols._is_fitted
@@ -241,7 +246,7 @@ class TestRollingOLSFit:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         ols.fit(factors, controls=controls)
 
         assert list(ols._control_cols) == ["c1", "c2"]
@@ -253,7 +258,7 @@ class TestRollingOLSFit:
         T = 100
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit(factors)
 
         assert result is ols
@@ -265,7 +270,7 @@ class TestRollingOLSFit:
         factors = pd.DataFrame({"factor": np.arange(10.0)})
 
         with pytest.raises(TypeError, match=removed_argument):
-            RollingOLS(window=5).fit(factors, **{removed_argument: True})
+            RollingOLS(window=5, mode="batched").fit(factors, **{removed_argument: True})
 
     @pytest.mark.parametrize(
         "removed_argument", ["orthogonalize_factors", "orthogonalize_controls"]
@@ -275,7 +280,7 @@ class TestRollingOLSFit:
         assets = pd.DataFrame({"asset": np.arange(10.0)})
 
         with pytest.raises(TypeError, match=removed_argument):
-            RollingOLS(window=5).fit_transform(
+            RollingOLS(window=5, mode="batched").fit_transform(
                 factors,
                 assets,
                 **{removed_argument: True},
@@ -287,7 +292,7 @@ class TestRollingOLSFit:
         T = 100
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
 
-        ols = RollingOLS(window=20, lambda_=0.01)
+        ols = RollingOLS(window=20, lambda_=0.01, mode="batched")
         ols.fit(factors)
 
         assert ols.lambda_ == 0.01
@@ -309,7 +314,9 @@ class TestRollingOLSIndexContract:
         index = pd.date_range("2024-01-01", periods=8)
         factors, controls, assets = self._frames(index)
 
-        result = RollingOLS(window=4).fit_transform(factors, assets, controls=controls)
+        result = RollingOLS(window=4, mode="batched").fit_transform(
+            factors, assets, controls=controls
+        )
 
         assert result.index.equals(index)
 
@@ -319,7 +326,7 @@ class TestRollingOLSIndexContract:
         controls = controls.iloc[::-1]
 
         with pytest.raises(ValueError, match="'factors'.*'controls'"):
-            RollingOLS(window=4).fit(factors, controls=controls)
+            RollingOLS(window=4, mode="batched").fit(factors, controls=controls)
 
     def test_partially_overlapping_index_raises_at_first_divergence(self):
         factor_index = pd.date_range("2024-01-01", periods=8)
@@ -328,21 +335,21 @@ class TestRollingOLSIndexContract:
         _, controls, _ = self._frames(control_index)
 
         with pytest.raises(ValueError, match="differ from position 0"):
-            RollingOLS(window=4).fit(factors, controls=controls)
+            RollingOLS(window=4, mode="batched").fit(factors, controls=controls)
 
     def test_duplicate_index_raises_and_names_labels(self):
         index = pd.Index([0, 1, 1, 2])
         factors, _, _ = self._frames(index)
 
         with pytest.raises(ValueError, match=r"'factors'.*duplicate labels \[1\]"):
-            RollingOLS(window=2).fit(factors)
+            RollingOLS(window=2, mode="batched").fit(factors)
 
     def test_non_monotonic_index_raises(self):
         index = pd.Index([0, 2, 1, 3])
         factors, _, _ = self._frames(index)
 
         with pytest.raises(ValueError, match="'factors'.*not monotonically increasing"):
-            RollingOLS(window=2).fit(factors)
+            RollingOLS(window=2, mode="batched").fit(factors)
 
     def test_different_lengths_raise_and_report_lengths(self):
         factor_index = pd.RangeIndex(8)
@@ -351,21 +358,21 @@ class TestRollingOLSIndexContract:
         _, controls, _ = self._frames(control_index)
 
         with pytest.raises(ValueError, match="lengths 8 and 7"):
-            RollingOLS(window=4).fit(factors, controls=controls)
+            RollingOLS(window=4, mode="batched").fit(factors, controls=controls)
 
     def test_different_index_types_raise(self):
         factors, _, _ = self._frames(pd.RangeIndex(8))
         _, controls, _ = self._frames(pd.Index(np.arange(8)))
 
         with pytest.raises(ValueError, match="different index types"):
-            RollingOLS(window=4).fit(factors, controls=controls)
+            RollingOLS(window=4, mode="batched").fit(factors, controls=controls)
 
     def test_transform_index_must_match_fitted_index(self):
         factor_index = pd.date_range("2024-01-01", periods=8)
         asset_index = pd.date_range("2024-01-02", periods=8)
         factors, _, _ = self._frames(factor_index)
         _, _, assets = self._frames(asset_index)
-        model = RollingOLS(window=4).fit(factors)
+        model = RollingOLS(window=4, mode="batched").fit(factors)
 
         with pytest.raises(ValueError, match="'factors'.*'assets'.*differ from position 0"):
             model.transform(assets)
@@ -373,7 +380,7 @@ class TestRollingOLSIndexContract:
     def test_permuted_target_index_raises_instead_of_returning_corrupt_result(self):
         index = pd.date_range("2024-01-01", periods=12)
         factors, _, assets = self._frames(index)
-        model = RollingOLS(window=4).fit(factors)
+        model = RollingOLS(window=4, mode="batched").fit(factors)
         model.transform(assets)
         permuted_assets = assets.iloc[::-1]
 
@@ -398,7 +405,7 @@ class TestRollingOLSTransform:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         ols.fit(factors)
         result = ols.transform(assets)
 
@@ -412,7 +419,7 @@ class TestRollingOLSTransform:
         T = 100
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
 
         with pytest.raises(RuntimeError):
             ols.transform(assets)
@@ -424,7 +431,7 @@ class TestRollingOLSTransform:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         ols.fit(factors)
         result = ols.transform(assets)
 
@@ -442,7 +449,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         ols.fit(factors, controls=controls)
         result = ols.transform(assets)
 
@@ -456,7 +463,7 @@ class TestRollingOLSTransform:
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
         assets.iloc[10:15] = np.nan
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         ols.fit(factors)
         result = ols.transform(assets)
 
@@ -467,9 +474,9 @@ class TestRollingOLSTransform:
         factors = pd.DataFrame({"factor": np.linspace(-2.0, 3.0, len(index))}, index=index)
         assets = pd.DataFrame({"asset": 3.0 + 2.0 * factors["factor"]}, index=index)
 
-        result = RollingOLS(window=12, min_periods=8, dtype="float64").fit_transform(
-            factors, assets
-        )
+        result = RollingOLS(
+            window=12, min_periods=8, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets)
 
         np.testing.assert_allclose(result.get_intercept("factor").iloc[7:], 3.0, atol=1e-12)
         np.testing.assert_allclose(result.get_beta("factor").iloc[7:], 2.0, atol=1e-12)
@@ -509,6 +516,7 @@ class TestRollingOLSTransform:
             expanding=expanding,
             fit_intercept=fit_intercept,
             dtype="float64",
+            mode="batched",
         )
         result = model.fit_transform(factors, targets, controls=controls)
         expected = oracle_rolling(
@@ -547,9 +555,9 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame({"control": rng.normal(size=n_observations)}, index=index)
         assets = pd.DataFrame({"asset": rng.normal(size=n_observations)}, index=index)
 
-        result = RollingOLS(window=252, min_periods=252, dtype="float64").fit_transform(
-            factors, assets, controls=controls
-        )
+        result = RollingOLS(
+            window=252, min_periods=252, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets, controls=controls)
         first_valid = np.flatnonzero(result.get_beta("factor").notna().to_numpy()[:, 0])[0]
 
         assert first_valid == 251
@@ -565,9 +573,9 @@ class TestRollingOLSTransform:
             {"asset": 5.0 + 2.0 * factor_values - 3.0 * control_values + rng.normal(size=100)}
         )
 
-        current = RollingOLS(window=20, min_periods=20, dtype="float64").fit_transform(
-            factors, assets, controls=controls
-        )
+        current = RollingOLS(
+            window=20, min_periods=20, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets, controls=controls)
         old_factor_residual = rolling_residualize(
             factors, controls, window=20, min_periods=20, expanding=False
         )["factor"]
@@ -594,7 +602,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         cb = result.get_control_beta("f1", "c1")
@@ -609,7 +617,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, dtype="float64")
+        ols = RollingOLS(window=20, dtype="float64", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
         expected = oracle_rolling(
             assets,
@@ -638,7 +646,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=30, dtype="float64")
+        ols = RollingOLS(window=30, dtype="float64", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
         expected = oracle_rolling(
             assets,
@@ -668,7 +676,7 @@ class TestRollingOLSTransform:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=40)
+        ols = RollingOLS(window=40, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
         joint = result.get_control_beta("f1", "c1")
 
@@ -699,7 +707,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame({"c": c})
         assets = pd.DataFrame({"a": rng.standard_normal(T)})
 
-        ols = RollingOLS(window=W, dtype="float64")
+        ols = RollingOLS(window=W, dtype="float64", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         cb_f1 = result.get_control_beta("f1", "c")["a"]
@@ -738,7 +746,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame({"c": c}, index=idx)
         assets = pd.DataFrame({"a": rng.standard_normal(W)}, index=idx)
 
-        ols = RollingOLS(window=W, dtype="float64")
+        ols = RollingOLS(window=W, dtype="float64", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         cb_f1 = result.get_control_beta("f1", "c").iloc[-1, 0]
@@ -774,7 +782,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame({"c1": c1, "c2": c2}, index=idx)
         assets = pd.DataFrame({"y": y}, index=idx)
 
-        ols = RollingOLS(window=W, dtype="float64")
+        ols = RollingOLS(window=W, dtype="float64", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         # Hand-compute FWL: residualize c1 and y on [1, f, c2].
@@ -805,7 +813,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls)
 
         with pytest.raises(RuntimeError):
@@ -818,7 +826,7 @@ class TestRollingOLSTransform:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, return_control_betas=True)
 
         with pytest.raises(RuntimeError):
@@ -836,10 +844,7 @@ class TestRollingOLSMissingData:
         assets.loc[1, "asset"] = np.nan
 
         result = RollingOLS(
-            window=4,
-            min_periods=3,
-            ewma_halflife=ewma_halflife,
-            dtype="float64",
+            window=4, min_periods=3, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
         ).fit_transform(factors, assets)
 
         slope = result.get_beta("factor").iloc[-1, 0]
@@ -868,10 +873,7 @@ class TestRollingOLSMissingData:
             seed=31,
         )
         result = RollingOLS(
-            window=18,
-            min_periods=10,
-            ewma_halflife=ewma_halflife,
-            dtype="float64",
+            window=18, min_periods=10, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
         ).fit_transform(factors, targets, controls=controls, return_control_betas=True)
         expected = oracle_rolling(
             targets,
@@ -917,16 +919,10 @@ class TestRollingOLSMissingData:
         assets.loc[0, "asset"] = np.nan
 
         with_nan = RollingOLS(
-            window=12,
-            min_periods=8,
-            ewma_halflife=ewma_halflife,
-            dtype="float64",
+            window=12, min_periods=8, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
         ).fit_transform(factors, assets, controls=controls)
         deleted = RollingOLS(
-            window=12,
-            min_periods=8,
-            ewma_halflife=ewma_halflife,
-            dtype="float64",
+            window=12, min_periods=8, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
         ).fit_transform(
             factors.iloc[1:].reset_index(drop=True),
             assets.iloc[1:].reset_index(drop=True),
@@ -951,8 +947,8 @@ class TestRollingOLSMissingData:
             "dtype": "float64",
         }
 
-        together = RollingOLS(**options).fit_transform(factors, assets)
-        alone = RollingOLS(**options).fit_transform(factors, assets[["unaffected"]])
+        together = RollingOLS(**options, mode="batched").fit_transform(factors, assets)
+        alone = RollingOLS(**options, mode="batched").fit_transform(factors, assets[["unaffected"]])
 
         for getter in ("get_beta", "get_intercept", "get_residuals", "get_r2", "get_n_used"):
             # Different pattern-grouping paths under EWMA can produce sub-machine-epsilon
@@ -977,10 +973,7 @@ class TestRollingOLSMissingData:
         )
 
         result = RollingOLS(
-            window=6,
-            min_periods=4,
-            ewma_halflife=ewma_halflife,
-            dtype="float64",
+            window=6, min_periods=4, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
         ).fit_transform(factors, assets)
 
         assert result.get_n_used("factor").loc[4, "exact"] == 4
@@ -999,7 +992,7 @@ class TestRollingOLSFitTransform:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result is not None
@@ -1014,7 +1007,7 @@ class TestRollingOLSFitTransform:
         controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls)
 
         assert result is not None
@@ -1027,11 +1020,11 @@ class TestRollingOLSFitTransform:
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
         # fit_transform
-        ols1 = RollingOLS(window=20)
+        ols1 = RollingOLS(window=20, mode="batched")
         result1 = ols1.fit_transform(factors, assets)
 
         # fit then transform
-        ols2 = RollingOLS(window=20)
+        ols2 = RollingOLS(window=20, mode="batched")
         ols2.fit(factors)
         result2 = ols2.transform(assets)
 
@@ -1055,7 +1048,7 @@ class TestRollingOLSModes:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20, expanding=False)
+        ols = RollingOLS(window=20, expanding=False, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result is not None
@@ -1067,7 +1060,7 @@ class TestRollingOLSModes:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20, expanding=True)
+        ols = RollingOLS(window=20, expanding=True, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result is not None
@@ -1079,10 +1072,10 @@ class TestRollingOLSModes:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols1 = RollingOLS(window=20, lag_signal=False)
+        ols1 = RollingOLS(window=20, lag_signal=False, mode="batched")
         result1 = ols1.fit_transform(factors, assets)
 
-        ols2 = RollingOLS(window=20, lag_signal=True)
+        ols2 = RollingOLS(window=20, lag_signal=True, mode="batched")
         result2 = ols2.fit_transform(factors, assets)
 
         # Signals should differ with different lag_signal settings
@@ -1098,10 +1091,10 @@ class TestRollingOLSModes:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols1 = RollingOLS(window=20, adj_r2=False)
+        ols1 = RollingOLS(window=20, adj_r2=False, mode="batched")
         result1 = ols1.fit_transform(factors, assets)
 
-        ols2 = RollingOLS(window=20, adj_r2=True)
+        ols2 = RollingOLS(window=20, adj_r2=True, mode="batched")
         result2 = ols2.fit_transform(factors, assets)
 
         r2_1 = result1.get_r2("f1")
@@ -1118,7 +1111,7 @@ class TestRollingOLSModes:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=10, min_periods=2, adj_r2=True)
+        ols = RollingOLS(window=10, min_periods=2, adj_r2=True, mode="batched")
         result = ols.fit_transform(factors, assets)
         r2 = result.get_r2("f1")
 
@@ -1132,7 +1125,7 @@ class TestRollingOLSModes:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=10, min_periods=2, adj_r2=True)
+        ols = RollingOLS(window=10, min_periods=2, adj_r2=True, mode="batched")
         result = ols.fit_transform(factors, assets)
         r2 = result.get_r2("f1")["a1"]
 
@@ -1162,7 +1155,7 @@ class TestRollingOLSSignalRepresentation:
         controls = pd.DataFrame({"control": rng.normal(size=50)}) if with_controls else None
         assets = pd.DataFrame({"asset": rng.normal(size=50)})
 
-        result = RollingOLS(window=20, dtype="float64").fit_transform(
+        result = RollingOLS(window=20, dtype="float64", mode="batched").fit_transform(
             factors, assets, controls=controls
         )
 
@@ -1177,9 +1170,9 @@ class TestRollingOLSSignalRepresentation:
         rng = np.random.default_rng(50)
         factors = pd.DataFrame({"factor": rng.normal(size=40)})
         assets = pd.DataFrame({"asset": 3.0 + 2.0 * factors["factor"]})
-        result = RollingOLS(window=15, min_periods=10, dtype="float64").fit_transform(
-            factors, assets
-        )
+        result = RollingOLS(
+            window=15, min_periods=10, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets)
 
         reconstructed = (
             result.get_intercept("factor")
@@ -1204,7 +1197,7 @@ class TestRollingOLSSignalRepresentation:
             }
         )
         assets = pd.DataFrame({"asset": rng.normal(size=45)})
-        model = RollingOLS(window=15, lag_signal=True, dtype="float64")
+        model = RollingOLS(window=15, lag_signal=True, dtype="float64", mode="batched")
         result = model.fit_transform(factors, assets)
         endpoint = 30
         previous_beta = result.get_beta("f2").iloc[endpoint - 1, 0]
@@ -1228,8 +1221,10 @@ class TestRollingOLSR2Definitions:
             seed=40,
         )
         options = {"window": 20, "min_periods": 20, "dtype": "float64"}
-        unadjusted = RollingOLS(**options).fit_transform(factors, targets, controls=controls)
-        adjusted = RollingOLS(**options, adj_r2=True).fit_transform(
+        unadjusted = RollingOLS(**options, mode="batched").fit_transform(
+            factors, targets, controls=controls
+        )
+        adjusted = RollingOLS(**options, adj_r2=True, mode="batched").fit_transform(
             factors, targets, controls=controls
         )
         expected = oracle_rolling(
@@ -1279,9 +1274,9 @@ class TestRollingOLSR2Definitions:
             nan_pattern=nan_pattern,
             seed=41,
         )
-        result = RollingOLS(window=18, min_periods=10, dtype="float64").fit_transform(
-            factors, targets, controls=controls
-        )
+        result = RollingOLS(
+            window=18, min_periods=10, dtype="float64", mode="batched"
+        ).fit_transform(factors, targets, controls=controls)
         values = result.get_r2(factors.columns[0]).to_numpy()
         finite = values[np.isfinite(values)]
 
@@ -1292,10 +1287,7 @@ class TestRollingOLSR2Definitions:
         factor = pd.DataFrame({"factor": [-2.0, -1.0, 0.0, 1.0, 3.0]})
         assets = pd.DataFrame({"asset": [4.0, 1.0, 2.0, 5.0, 7.0]})
         result = RollingOLS(
-            window=5,
-            min_periods=5,
-            fit_intercept=False,
-            dtype="float64",
+            window=5, min_periods=5, fit_intercept=False, dtype="float64", mode="batched"
         ).fit_transform(factor, assets)
 
         beta = result.get_beta("factor").iloc[-1, 0]
@@ -1309,10 +1301,7 @@ class TestRollingOLSR2Definitions:
         factor = pd.DataFrame({"factor": np.linspace(-2.0, 3.0, 20)})
         assets = pd.DataFrame({"asset": 3.0 + 2.0 * factor["factor"]})
         result = RollingOLS(
-            window=20,
-            min_periods=20,
-            adj_r2=adj_r2,
-            dtype="float64",
+            window=20, min_periods=20, adj_r2=adj_r2, dtype="float64", mode="batched"
         ).fit_transform(factor, assets)
 
         assert result.get_r2("factor").iloc[-1, 0] == pytest.approx(1.0, abs=1e-12)
@@ -1327,7 +1316,7 @@ class TestRollingOLSR2Definitions:
         assets = pd.DataFrame(
             {"asset": 2.0 * orthogonal[:, 0] + 4.0 * orthogonal[:, 1] + orthogonal[:, 2]}
         )
-        result = RollingOLS(window=60, dtype="float64").fit_transform(
+        result = RollingOLS(window=60, dtype="float64", mode="batched").fit_transform(
             factor, assets, controls=controls
         )
 
@@ -1343,7 +1332,7 @@ class TestRollingOLSR2Definitions:
         factor = pd.DataFrame({"factor": basis[:, 0]})
         assets = pd.DataFrame({"asset": 2.0 * basis[:, 0] + basis[:, 1]})
         controls = pd.DataFrame({"control": basis[:, 2]})
-        result = RollingOLS(window=50, dtype="float64").fit_transform(
+        result = RollingOLS(window=50, dtype="float64", mode="batched").fit_transform(
             factor, assets, controls=controls
         )
 
@@ -1359,9 +1348,9 @@ class TestRollingOLSR2Definitions:
             {"asset": 1.0 + 2.0 * factor["factor"] - controls["control"] + rng.normal(size=20)}
         )
         factor.loc[3, "factor"] = np.nan
-        result = RollingOLS(window=20, min_periods=15, dtype="float64").fit_transform(
-            factor, assets, controls=controls
-        )
+        result = RollingOLS(
+            window=20, min_periods=15, dtype="float64", mode="batched"
+        ).fit_transform(factor, assets, controls=controls)
         complete = assets["asset"].notna() & factor["factor"].notna() & controls["control"].notna()
         full = oracle_fit_window(
             assets.loc[complete, "asset"].to_numpy(),
@@ -1385,10 +1374,7 @@ class TestRollingOLSR2Definitions:
         factor = pd.DataFrame({"factor": np.arange(8.0)})
         assets = pd.DataFrame({"asset": np.arange(8.0) ** 2})
         result = RollingOLS(
-            window=5,
-            min_periods=2,
-            adj_r2=True,
-            dtype="float64",
+            window=5, min_periods=2, adj_r2=True, dtype="float64", mode="batched"
         ).fit_transform(factor, assets)
         partial = result.get_partial_r2("factor").to_numpy()
 
@@ -1404,11 +1390,7 @@ class TestRollingOLSR2Definitions:
             seed=45,
         )
         result = RollingOLS(
-            window=20,
-            min_periods=15,
-            ewma_halflife=4,
-            adj_r2=True,
-            dtype="float64",
+            window=20, min_periods=15, ewma_halflife=4, adj_r2=True, dtype="float64", mode="batched"
         ).fit_transform(factors, targets, controls=controls)
         expected = oracle_rolling(
             targets,
@@ -1443,8 +1425,10 @@ class TestRollingOLSR2Definitions:
             "adj_r2": True,
             "dtype": "float64",
         }
-        unweighted = RollingOLS(**options).fit_transform(factors, targets, controls=controls)
-        uniform_model = RollingOLS(**options)
+        unweighted = RollingOLS(**options, mode="batched").fit_transform(
+            factors, targets, controls=controls
+        )
+        uniform_model = RollingOLS(**options, mode="batched")
         monkeypatch.setattr(uniform_model, "_weights", lambda: np.ones(20))
         uniform = uniform_model.fit_transform(factors, targets, controls=controls)
         factor = factors.columns[0]
@@ -1459,7 +1443,7 @@ class TestRollingOLSR2Definitions:
         factors = pd.DataFrame({"factor": rng.normal(size=30)})
         controls = pd.DataFrame({"control": rng.normal(size=30)})
         assets = pd.DataFrame({"asset": rng.normal(size=30)})
-        result = RollingOLS(window=20, dtype="float64").fit_transform(
+        result = RollingOLS(window=20, dtype="float64", mode="batched").fit_transform(
             factors, assets, controls=controls, return_control_betas=True
         )
         window = slice(10, 30)
@@ -1490,9 +1474,7 @@ class TestRollingOLSRidge:
         lambda_ = 0.25
 
         result = RollingOLS(
-            window=n_observations,
-            lambda_=lambda_,
-            dtype="float64",
+            window=n_observations, lambda_=lambda_, dtype="float64", mode="batched"
         ).fit_transform(factors, assets)
 
         assert result.get_beta("factor").iloc[-1, 0] == pytest.approx(
@@ -1530,6 +1512,7 @@ class TestRollingOLSRidge:
             fit_intercept=fit_intercept,
             ewma_halflife=ewma_halflife,
             dtype="float64",
+            mode="batched",
         ).fit_transform(factors, targets, controls=controls, return_control_betas=True)
         expected = oracle_rolling(
             targets,
@@ -1574,7 +1557,9 @@ class TestRollingOLSRidge:
         factors = pd.DataFrame({"factor": factor_values})
         assets = pd.DataFrame({"asset": 7.0 + 2.0 * factor_values})
 
-        result = RollingOLS(window=60, lambda_=1e10, dtype="float64").fit_transform(factors, assets)
+        result = RollingOLS(window=60, lambda_=1e10, dtype="float64", mode="batched").fit_transform(
+            factors, assets
+        )
 
         assert abs(result.get_beta("factor").iloc[-1, 0]) < 1e-8
         assert result.get_intercept("factor").iloc[-1, 0] == pytest.approx(
@@ -1590,10 +1575,10 @@ class TestRollingOLSRidge:
         scaled_factors = factors.copy()
         scaled_factors["f1"] *= 1000.0
 
-        baseline = RollingOLS(window=30, lambda_=0.6, dtype="float64").fit_transform(
-            factors, assets
-        )
-        scaled = RollingOLS(window=30, lambda_=0.6, dtype="float64").fit_transform(
+        baseline = RollingOLS(
+            window=30, lambda_=0.6, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets)
+        scaled = RollingOLS(window=30, lambda_=0.6, dtype="float64", mode="batched").fit_transform(
             scaled_factors, assets
         )
 
@@ -1659,7 +1644,7 @@ class TestRollingOLSRidge:
         lambda_ = 0.5
 
         direct = (
-            RollingOLS(window=20, lambda_=lambda_, dtype="float64")
+            RollingOLS(window=20, lambda_=lambda_, dtype="float64", mode="batched")
             .fit_transform(factors, assets, controls=controls)
             .get_beta("factor")
         )
@@ -1694,13 +1679,13 @@ class TestRollingOLSEWMA:
 
     def test_ewma_halflife_stored(self):
         """ewma_halflife is stored on the constructor; defaults to None."""
-        assert RollingOLS().ewma_halflife is None
-        assert RollingOLS(ewma_halflife=63).ewma_halflife == 63
+        assert RollingOLS(mode="batched").ewma_halflife is None
+        assert RollingOLS(ewma_halflife=63, mode="batched").ewma_halflife == 63
 
     def test_ewma_with_expanding_raises(self):
         """ewma_halflife combined with expanding=True raises ValueError."""
         with pytest.raises(ValueError, match="expanding"):
-            RollingOLS(window=20, expanding=True, ewma_halflife=10)
+            RollingOLS(window=20, expanding=True, ewma_halflife=10, mode="batched")
 
     def test_ewma_betas_differ_from_equal_weight(self):
         """EWMA betas differ from the equal-weight betas."""
@@ -1709,8 +1694,10 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
-        equal = RollingOLS(window=60).fit_transform(factors, assets)
-        ewma = RollingOLS(window=60, ewma_halflife=15).fit_transform(factors, assets)
+        equal = RollingOLS(window=60, mode="batched").fit_transform(factors, assets)
+        ewma = RollingOLS(window=60, ewma_halflife=15, mode="batched").fit_transform(
+            factors, assets
+        )
 
         beta_eq = equal.get_beta("f1")
         beta_ew = ewma.get_beta("f1")
@@ -1729,8 +1716,10 @@ class TestRollingOLSEWMA:
         controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
-        baseline = RollingOLS(window=40).fit_transform(factors, assets, controls=controls)
-        explicit = RollingOLS(window=40, ewma_halflife=None).fit_transform(
+        baseline = RollingOLS(window=40, mode="batched").fit_transform(
+            factors, assets, controls=controls
+        )
+        explicit = RollingOLS(window=40, ewma_halflife=None, mode="batched").fit_transform(
             factors, assets, controls=controls
         )
         for fac in ["f1", "f2"]:
@@ -1745,7 +1734,9 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"], index=idx)
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"], index=idx)
 
-        result = RollingOLS(window=30, ewma_halflife=10).fit_transform(factors, assets)
+        result = RollingOLS(window=30, ewma_halflife=10, mode="batched").fit_transform(
+            factors, assets
+        )
         beta = result.get_beta("f1")
         assert beta.shape == (T, 2)
         assert list(beta.columns) == ["a1", "a2"]
@@ -1760,9 +1751,9 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        result = RollingOLS(window=window, ewma_halflife=hl, dtype="float64").fit_transform(
-            factors, assets
-        )
+        result = RollingOLS(
+            window=window, ewma_halflife=hl, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets)
         beta = result.get_beta("f1")["a1"]
 
         # Manual weighted slope for the final window.
@@ -1786,7 +1777,9 @@ class TestRollingOLSEWMA:
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
         assets.iloc[10:15, 0] = np.nan
 
-        result = RollingOLS(window=30, ewma_halflife=10).fit_transform(factors, assets)
+        result = RollingOLS(window=30, ewma_halflife=10, mode="batched").fit_transform(
+            factors, assets
+        )
         beta = result.get_beta("f1")
         # a1 is NaN at the masked prediction points but defined elsewhere.
         assert beta["a1"].iloc[10:15].isna().all()
@@ -1807,8 +1800,8 @@ class TestRollingOLSEWMA:
         assets = pd.DataFrame(rng.normal(size=(T, 2)), columns=["a1", "a2"])
 
         common = {"window": W, "lambda_": 0.3, "dtype": "float64"}
-        unweighted = RollingOLS(**common).fit_transform(factors, assets)
-        weighted_model = RollingOLS(**common)
+        unweighted = RollingOLS(**common, mode="batched").fit_transform(factors, assets)
+        weighted_model = RollingOLS(**common, mode="batched")
         # Replace _weights() so it returns np.ones(W) — normalized to sum=1 inside.
         monkeypatch.setattr(weighted_model, "_weights", lambda: np.ones(W))
         weighted = weighted_model.fit_transform(factors, assets)
@@ -1848,13 +1841,13 @@ class TestRollingOLSEWMA:
         shrinkage_ratios = {}
         for W in [20, 60]:
             ridge = (
-                RollingOLS(window=W, lambda_=lam, dtype="float64")
+                RollingOLS(window=W, lambda_=lam, dtype="float64", mode="batched")
                 .fit_transform(factors, assets)
                 .get_beta("f")["a"]
                 .dropna()
             )
             ols = (
-                RollingOLS(window=W, dtype="float64")
+                RollingOLS(window=W, dtype="float64", mode="batched")
                 .fit_transform(factors, assets)
                 .get_beta("f")["a"]
                 .dropna()
@@ -1885,10 +1878,12 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame({"f": f})
         assets = pd.DataFrame({"a": a})
 
-        r_eq = RollingOLS(window=W, min_periods=mp, dtype="float64").fit_transform(factors, assets)
-        r_ew = RollingOLS(window=W, min_periods=mp, ewma_halflife=8, dtype="float64").fit_transform(
+        r_eq = RollingOLS(window=W, min_periods=mp, dtype="float64", mode="batched").fit_transform(
             factors, assets
         )
+        r_ew = RollingOLS(
+            window=W, min_periods=mp, ewma_halflife=8, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets)
 
         nan_eq = r_eq.get_beta("f")["a"].isna()
         nan_ew = r_ew.get_beta("f")["a"].isna()
@@ -1913,10 +1908,12 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame({"f": f})
         assets = pd.DataFrame({"a": y})
 
-        r_eq = RollingOLS(window=W, hac_lags=lags, dtype="float64").fit_transform(factors, assets)
-        r_ew = RollingOLS(window=W, hac_lags=lags, ewma_halflife=hl, dtype="float64").fit_transform(
+        r_eq = RollingOLS(window=W, hac_lags=lags, dtype="float64", mode="batched").fit_transform(
             factors, assets
         )
+        r_ew = RollingOLS(
+            window=W, hac_lags=lags, ewma_halflife=hl, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets)
 
         se_eq = r_eq.get_se("f")["a"].dropna()
         se_ew = r_ew.get_se("f")["a"].dropna()
@@ -1946,9 +1943,9 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame(rng.normal(size=(T, 1)), columns=["f"])
         assets = pd.DataFrame(rng.normal(size=(T, 1)), columns=["a"])
 
-        result = RollingOLS(window=W, ewma_halflife=1, dtype="float64").fit_transform(
-            factors, assets
-        )
+        result = RollingOLS(
+            window=W, ewma_halflife=1, dtype="float64", mode="batched"
+        ).fit_transform(factors, assets)
         beta = result.get_beta("f")["a"]
         valid = beta.dropna()
         assert len(valid) > 0, "No valid estimates for halflife=1"
@@ -1965,7 +1962,7 @@ class TestRollingOLSEdgeCases:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result.get_beta("f1").shape == (T, 1)
@@ -1977,7 +1974,7 @@ class TestRollingOLSEdgeCases:
         factors = pd.DataFrame(np.random.randn(T, 10), columns=[f"f{i}" for i in range(10)])
         assets = pd.DataFrame(np.random.randn(T, 20), columns=[f"a{i}" for i in range(20)])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result.get_beta("f0").shape == (T, 20)
@@ -1989,7 +1986,7 @@ class TestRollingOLSEdgeCases:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20, min_periods=5)
+        ols = RollingOLS(window=20, min_periods=5, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result is not None
@@ -2005,7 +2002,7 @@ class TestRollingOLSEdgeCases:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, dtype="float32")
+        ols = RollingOLS(window=20, dtype="float32", mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result is not None
@@ -2017,7 +2014,7 @@ class TestRollingOLSEdgeCases:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, dtype="float64")
+        ols = RollingOLS(window=20, dtype="float64", mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result is not None
@@ -2029,10 +2026,10 @@ class TestRollingOLSEdgeCases:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 50), columns=[f"a{i}" for i in range(50)])
 
-        ols1 = RollingOLS(window=20, asset_chunk_size=10)
+        ols1 = RollingOLS(window=20, asset_chunk_size=10, mode="batched")
         result1 = ols1.fit_transform(factors, assets)
 
-        ols2 = RollingOLS(window=20, asset_chunk_size=50)
+        ols2 = RollingOLS(window=20, asset_chunk_size=50, mode="batched")
         result2 = ols2.fit_transform(factors, assets)
 
         # Results should be the same regardless of chunk size
@@ -2056,14 +2053,14 @@ class TestRollingOLSSingularWarnings:
     def test_warns_by_default(self):
         """Collinear controls trigger a RuntimeWarning during fit."""
         factors, assets, controls = self._collinear_setup()
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         with pytest.warns(RuntimeWarning, match="singular"):
             ols.fit_transform(factors, assets, controls=controls)
 
     def test_warn_singular_false_suppresses(self, recwarn):
         """warn_singular=False on the constructor suppresses the warning."""
         factors, assets, controls = self._collinear_setup()
-        ols = RollingOLS(window=20, warn_singular=False)
+        ols = RollingOLS(window=20, warn_singular=False, mode="batched")
         ols.fit_transform(factors, assets, controls=controls)
         assert not any(issubclass(w.category, RuntimeWarning) for w in recwarn)
 
@@ -2083,15 +2080,14 @@ class TestEstimationCadence:
     @pytest.mark.parametrize("estimate_every", [5, 21, "W-FRI", "ME"])
     def test_all_quantities_match_full_fit_bitwise(self, estimate_every):
         factors, controls, targets = _cadence_panel()
-        full = RollingOLS(**self.model_kwargs).fit_transform(
+        full = RollingOLS(**self.model_kwargs, mode="batched").fit_transform(
             factors,
             targets,
             controls,
             return_control_betas=True,
         )
         sparse = RollingOLS(
-            **self.model_kwargs,
-            estimate_every=estimate_every,
+            **self.model_kwargs, estimate_every=estimate_every, mode="batched"
         ).fit_transform(
             factors,
             targets,
@@ -2141,8 +2137,7 @@ class TestEstimationCadence:
     def test_retained_storage_scales_with_selected_endpoints(self, estimate_every):
         factors, controls, targets = _cadence_panel()
         result = RollingOLS(
-            **self.model_kwargs,
-            estimate_every=estimate_every,
+            **self.model_kwargs, estimate_every=estimate_every, mode="batched"
         ).fit_transform(factors, targets, controls)
         compact = result._betas["factor_1"]
 
@@ -2156,10 +2151,9 @@ class TestEstimationCadence:
 
     def test_getters_expand_and_iterators_stay_compact(self):
         factors, controls, targets = _cadence_panel()
-        result = RollingOLS(
-            **self.model_kwargs,
-            estimate_every=5,
-        ).fit_transform(factors, targets, controls)
+        result = RollingOLS(**self.model_kwargs, estimate_every=5, mode="batched").fit_transform(
+            factors, targets, controls
+        )
         positions = result.estimated_positions
         skipped = np.setdiff1d(np.arange(len(targets)), positions)
 
@@ -2180,14 +2174,11 @@ class TestEstimationCadence:
 
     def test_lagged_signal_uses_selected_beta_at_next_observation(self):
         factors, controls, targets = _cadence_panel()
-        full = RollingOLS(
-            **self.model_kwargs,
-            lag_signal=True,
-        ).fit_transform(factors, targets, controls)
+        full = RollingOLS(**self.model_kwargs, lag_signal=True, mode="batched").fit_transform(
+            factors, targets, controls
+        )
         sparse = RollingOLS(
-            **self.model_kwargs,
-            estimate_every=5,
-            lag_signal=True,
+            **self.model_kwargs, estimate_every=5, lag_signal=True, mode="batched"
         ).fit_transform(factors, targets, controls)
         signal_positions = sparse.estimated_positions + 1
         signal_positions = signal_positions[signal_positions < len(targets)]
@@ -2201,11 +2192,12 @@ class TestEstimationCadence:
 
     def test_default_and_explicit_one_are_bitwise_identical(self):
         factors, controls, targets = _cadence_panel()
-        default = RollingOLS(**self.model_kwargs).fit_transform(factors, targets, controls)
-        explicit = RollingOLS(
-            **self.model_kwargs,
-            estimate_every=1,
-        ).fit_transform(factors, targets, controls)
+        default = RollingOLS(**self.model_kwargs, mode="batched").fit_transform(
+            factors, targets, controls
+        )
+        explicit = RollingOLS(**self.model_kwargs, estimate_every=1, mode="batched").fit_transform(
+            factors, targets, controls
+        )
 
         for factor in factors:
             for accessor in (
@@ -2230,14 +2222,13 @@ class TestEstimationCadence:
         factors, controls, targets = _cadence_panel()
         for cadence in (5, 21, "W-FRI", "ME"):
             result = RollingOLS(
-                **self.model_kwargs,
-                estimate_every=cadence,
+                **self.model_kwargs, estimate_every=cadence, mode="batched"
             ).fit_transform(factors, targets, controls)
             assert result.estimated_positions[-1] == len(targets) - 1
 
     def test_holiday_shortened_week_selects_last_observation_present(self):
         index = pd.date_range("2024-01-08", "2024-01-19", freq="B").drop(pd.Timestamp("2024-01-12"))
-        model = RollingOLS(window=2, min_periods=2, estimate_every="W-FRI")
+        model = RollingOLS(window=2, min_periods=2, estimate_every="W-FRI", mode="batched")
         positions = model._estimation_positions(index)
 
         assert pd.Timestamp("2024-01-11") in index[positions]
@@ -2246,8 +2237,7 @@ class TestEstimationCadence:
     def test_joint_vectorized_solve_receives_only_selected_windows(self):
         factors, controls, targets = _cadence_panel()
         selected_positions = RollingOLS(
-            **self.model_kwargs,
-            estimate_every=5,
+            **self.model_kwargs, estimate_every=5, mode="batched"
         )._estimation_positions(targets.index)
         expected_windows = int((selected_positions >= self.model_kwargs["window"] - 1).sum())
         original_qr = np.linalg.qr
@@ -2259,10 +2249,9 @@ class TestEstimationCadence:
             return original_qr(values, *args, **kwargs)
 
         with patch("rols.estimators.np.linalg.qr", side_effect=recording_qr):
-            RollingOLS(
-                **self.model_kwargs,
-                estimate_every=5,
-            ).fit_transform(factors[["factor_1"]], targets.fillna(0.0), controls)
+            RollingOLS(**self.model_kwargs, estimate_every=5, mode="batched").fit_transform(
+                factors[["factor_1"]], targets.fillna(0.0), controls
+            )
 
         assert batch_sizes
         assert max(batch_sizes) == expected_windows
@@ -2271,7 +2260,7 @@ class TestEstimationCadence:
     @pytest.mark.parametrize("value", [0, -1, "not-an-offset"])
     def test_invalid_cadence_names_value(self, value):
         with pytest.raises(ValueError, match=repr(value)):
-            RollingOLS(estimate_every=value)
+            RollingOLS(estimate_every=value, mode="batched")
 
 
 class TestRollingOLSBatchedVsJoint:
@@ -2539,7 +2528,7 @@ class TestRidgeEffectiveDof:
         factors, controls, targets = self._simple_panel()
         W = 20
         n_params = 3  # intercept + 1 control + 1 factor
-        result = RollingOLS(window=W, min_periods=W, dtype="float64").fit_transform(
+        result = RollingOLS(window=W, min_periods=W, dtype="float64", mode="batched").fit_transform(
             factors, targets, controls=controls
         )
         dof = result.get_dof("f").dropna()
@@ -2556,11 +2545,11 @@ class TestRidgeEffectiveDof:
         """With lambda_>0, df_eff < n_params so residual_dof > n_eff - n_params."""
         factors, controls, targets = self._simple_panel()
         W = 20
-        ols_result = RollingOLS(window=W, min_periods=W, dtype="float64").fit_transform(
-            factors, targets, controls=controls
-        )
+        ols_result = RollingOLS(
+            window=W, min_periods=W, dtype="float64", mode="batched"
+        ).fit_transform(factors, targets, controls=controls)
         ridge_result = RollingOLS(
-            window=W, min_periods=W, lambda_=0.5, dtype="float64"
+            window=W, min_periods=W, lambda_=0.5, dtype="float64", mode="batched"
         ).fit_transform(factors, targets, controls=controls)
         ols_dof = ols_result.get_dof("f").dropna()
         ridge_dof = ridge_result.get_dof("f").dropna()
@@ -2579,7 +2568,7 @@ class TestRidgeEffectiveDof:
         prev_dof = None
         for lam in lambdas:
             result = RollingOLS(
-                window=W, min_periods=W, lambda_=lam, dtype="float64"
+                window=W, min_periods=W, lambda_=lam, dtype="float64", mode="batched"
             ).fit_transform(factors, targets, controls=controls)
             dof = result.get_dof("f").dropna()
             if prev_dof is not None:
@@ -2594,11 +2583,7 @@ class TestRidgeEffectiveDof:
         """adj_r2=True with Ridge uses df_eff, matching the scalar oracle."""
         factors, controls, targets = self._simple_panel(T=80)
         result = RollingOLS(
-            window=20,
-            min_periods=15,
-            lambda_=0.3,
-            adj_r2=True,
-            dtype="float64",
+            window=20, min_periods=15, lambda_=0.3, adj_r2=True, dtype="float64", mode="batched"
         ).fit_transform(factors, targets, controls=controls)
         expected = oracle_rolling(
             targets,
@@ -2667,3 +2652,130 @@ class TestRidgeInferenceDocumentation:
         # The Ridge caveat phrase must appear in the HAC section
         assert "penalized pseudo-true" in text or "β_λ" in text
         assert "nominal-coverage" in text or "nominal coverage" in text
+
+
+class TestExplicitModeRequired:
+    """Issue #18: require explicit mode when multiple factors are supplied."""
+
+    def _make(self, n_factors: int = 3) -> tuple:
+        """Return (factors, targets, controls) DataFrames for tests."""
+        rng = np.random.default_rng(42)
+        T = 40
+        idx = pd.RangeIndex(T)
+        factors = pd.DataFrame(
+            rng.normal(size=(T, n_factors)),
+            index=idx,
+            columns=[f"f{j}" for j in range(n_factors)],
+        )
+        targets = pd.DataFrame(
+            rng.normal(size=(T, 2)),
+            index=idx,
+            columns=["a", "b"],
+        )
+        controls = pd.DataFrame(
+            {"c": rng.normal(size=T)},
+            index=idx,
+        )
+        return factors, targets, controls
+
+    def test_multi_factor_without_mode_raises(self):
+        """Multiple factors + mode=None raises ValueError with informative message."""
+        factors, targets, _ = self._make(n_factors=3)
+        ols = RollingOLS(window=40, min_periods=40)  # no mode — sentinel
+        with pytest.raises(ValueError, match="3 factors") as exc:
+            ols.fit(factors)
+        msg = str(exc.value)
+        assert "mode" in msg
+        assert 'mode="batched"' in msg
+        assert 'mode="joint"' in msg
+        assert "Pass mode explicitly" in msg
+
+    def test_fit_transform_multi_factor_without_mode_raises(self):
+        """`fit_transform` also raises when mode is omitted with multiple factors."""
+        factors, targets, _ = self._make(n_factors=2)
+        ols = RollingOLS(window=40, min_periods=40)  # no mode — sentinel
+        with pytest.raises(ValueError, match="2 factors"):
+            ols.fit_transform(factors, targets)
+
+    def test_multi_factor_with_batched_proceeds(self):
+        """Multiple factors + mode='batched' does not raise."""
+        factors, targets, _ = self._make(n_factors=3)
+        result = RollingOLS(window=40, min_periods=40, mode="batched").fit_transform(
+            factors, targets
+        )
+        assert result.mode == "batched"
+
+    def test_multi_factor_with_joint_proceeds(self):
+        """Multiple factors + mode='joint' does not raise."""
+        factors, targets, _ = self._make(n_factors=3)
+        result = RollingOLS(window=40, min_periods=40, mode="joint").fit_transform(factors, targets)
+        assert result.mode == "joint"
+
+    def test_single_factor_without_mode_does_not_raise(self):
+        """Single factor + mode=None does not raise and produces the same result."""
+        rng = np.random.default_rng(7)
+        T = 40
+        idx = pd.RangeIndex(T)
+        f = pd.DataFrame({"f": rng.normal(size=T)}, index=idx)
+        y = pd.DataFrame({"a": rng.normal(size=T)}, index=idx)
+
+        result_none = RollingOLS(window=40, min_periods=40, mode="batched").fit_transform(f, y)
+        result_batched = RollingOLS(window=40, min_periods=40, mode="batched").fit_transform(f, y)
+
+        assert result_none.mode == "batched"
+        pd.testing.assert_frame_equal(
+            result_none.get_beta("f"),
+            result_batched.get_beta("f"),
+        )
+
+    def test_invalid_mode_string_still_raises(self):
+        """Unknown mode string raises ValueError at construction, not fit."""
+        with pytest.raises(ValueError, match="mode must be"):
+            RollingOLS(window=40, mode="unknown")
+
+    def test_warn_correlated_factors_still_fires_with_explicit_batched(self):
+        """_warn_correlated_factors warns once when mode='batched' is chosen explicitly."""
+        rng = np.random.default_rng(0)
+        T = 50
+        idx = pd.RangeIndex(T)
+        base = rng.normal(size=T)
+        # Two highly correlated factors
+        factors = pd.DataFrame(
+            {"f1": base, "f2": base + 0.01 * rng.normal(size=T)},
+            index=idx,
+        )
+        targets = pd.DataFrame({"a": rng.normal(size=T)}, index=idx)
+        with pytest.warns(UserWarning, match="batched mode"):
+            RollingOLS(
+                window=50, min_periods=50, mode="batched", warn_correlated_factors=True
+            ).fit_transform(factors, targets)
+
+    def test_orthogonal_factors_batched_joint_equivalence_preserved(self):
+        """Orthogonal factors: batched and joint betas agree.
+
+        With an intercept, the two modes coincide when the factors are
+        both zero-mean and mutually orthogonal on the estimation sample.
+        QR on the demeaned matrix guarantees both conditions.
+        """
+        rng = np.random.default_rng(123)
+        T = 60
+        idx = pd.RangeIndex(T)
+        # Demean first, then QR-orthogonalize so factors are centred AND
+        # orthogonal — which is the condition required for batched ≡ joint
+        # in the presence of an intercept.
+        raw = rng.normal(size=(T, 2))
+        raw -= raw.mean(axis=0)
+        Q, _ = np.linalg.qr(raw)
+        factors = pd.DataFrame(Q, index=idx, columns=["f1", "f2"])
+        targets = pd.DataFrame({"a": rng.normal(size=T)}, index=idx)
+
+        r_batched = RollingOLS(window=T, min_periods=T, mode="batched").fit_transform(
+            factors, targets
+        )
+        r_joint = RollingOLS(window=T, min_periods=T, mode="joint").fit_transform(factors, targets)
+        for fac in ["f1", "f2"]:
+            np.testing.assert_allclose(
+                r_batched.get_beta(fac).values,
+                r_joint.get_beta(fac).values,
+                atol=1e-5,
+            )

@@ -21,7 +21,7 @@ class TestIntegrationBasicWorkflow:
         )
         assets = pd.DataFrame(np.random.randn(T, 3), index=dates, columns=["AAPL", "MSFT", "GOOG"])
 
-        ols = RollingOLS(window=60, min_periods=20)
+        ols = RollingOLS(window=60, min_periods=20, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert isinstance(result, RollingOLSResult)
@@ -43,7 +43,7 @@ class TestIntegrationBasicWorkflow:
             np.random.randn(T, 5), index=dates, columns=[f"stock_{i}" for i in range(5)]
         )
 
-        ols = RollingOLS(window=60)
+        ols = RollingOLS(window=60, mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls)
 
         assert result.get_beta("narrative_1").shape == (T, 5)
@@ -57,7 +57,7 @@ class TestIntegrationBasicWorkflow:
         factors = pd.DataFrame(np.random.randn(T, 1), index=dates, columns=["factor_1"])
         assets = pd.DataFrame(np.random.randn(T, 2), index=dates, columns=["asset_1", "asset_2"])
 
-        ols = RollingOLS(window=60, hac_lags=5)
+        ols = RollingOLS(window=60, hac_lags=5, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         se = result.get_se("factor_1")
@@ -73,7 +73,7 @@ class TestIntegrationBasicWorkflow:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, min_periods=10, expanding=True)
+        ols = RollingOLS(window=20, min_periods=10, expanding=True, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         beta = result.get_beta("f1")
@@ -88,7 +88,7 @@ class TestIntegrationBasicWorkflow:
         factors = pd.DataFrame(np.random.randn(T, 3), columns=["f1", "f2", "f3"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, lambda_=0.1)
+        ols = RollingOLS(window=20, lambda_=0.1, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result.get_beta("f1").shape == (T, 2)
@@ -100,7 +100,7 @@ class TestIntegrationBasicWorkflow:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, lag_signal=True)
+        ols = RollingOLS(window=20, lag_signal=True, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         signal = result.get_signal("f1")
@@ -131,7 +131,7 @@ class TestIntegrationDataHandling:
             index=dates,
         )
 
-        ols = RollingOLS(window=60, min_periods=20, hac_lags=5)
+        ols = RollingOLS(window=60, min_periods=20, hac_lags=5, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result.get_beta("momentum").shape == (T, 2)
@@ -148,7 +148,7 @@ class TestIntegrationDataHandling:
         factors.iloc[10:15, 0] = np.nan
         assets.iloc[20:25, 1] = np.nan
 
-        ols = RollingOLS(window=20, min_periods=10)
+        ols = RollingOLS(window=20, min_periods=10, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result.get_beta("f1").shape == (T, 2)
@@ -165,7 +165,7 @@ class TestIntegrationDataHandling:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"], index=dates)
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"], index=dates)
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         # Index should be preserved
@@ -178,7 +178,7 @@ class TestIntegrationDataHandling:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result.get_beta("f1").shape == (T, 3)
@@ -194,7 +194,7 @@ class TestIntegrationOutputFormats:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=10)
+        ols = RollingOLS(window=10, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         long_df = result.to_long("f1")
@@ -212,7 +212,7 @@ class TestIntegrationOutputFormats:
         factors = pd.DataFrame(np.random.randn(T, 3), columns=["f1", "f2", "f3"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=10)
+        ols = RollingOLS(window=10, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         long_df = result.to_long_all()
@@ -229,7 +229,7 @@ class TestIntegrationOutputFormats:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=10, hac_lags=2)
+        ols = RollingOLS(window=10, hac_lags=2, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         long_df = result.to_long("f1", include_se=True)
@@ -248,7 +248,7 @@ class TestIntegrationStatisticalProperties:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20, min_periods=5, expanding=True)
+        ols = RollingOLS(window=20, min_periods=5, expanding=True, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         beta = result.get_beta("f1").iloc[:, 0]
@@ -265,12 +265,12 @@ class TestIntegrationStatisticalProperties:
         assets = pd.DataFrame({"asset": 3.0 + 2.0 * factor_values})
 
         beta_ols = (
-            RollingOLS(window=30, lambda_=0.0, dtype="float64")
+            RollingOLS(window=30, lambda_=0.0, dtype="float64", mode="batched")
             .fit_transform(factors, assets)
             .get_beta("factor")
         )
         beta_ridge = (
-            RollingOLS(window=30, lambda_=1000.0, dtype="float64")
+            RollingOLS(window=30, lambda_=1000.0, dtype="float64", mode="batched")
             .fit_transform(factors, assets)
             .get_beta("factor")
         )
@@ -288,7 +288,7 @@ class TestIntegrationErrorHandling:
         T = 50
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
 
         with pytest.raises(RuntimeError):
             ols.transform(assets)
@@ -300,7 +300,7 @@ class TestIntegrationErrorHandling:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20)
+        ols = RollingOLS(window=20, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         with pytest.raises(KeyError):
@@ -313,7 +313,7 @@ class TestIntegrationErrorHandling:
         factors = pd.DataFrame(np.random.randn(T, 1), columns=["f1"])
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
-        ols = RollingOLS(window=20, hac_lags=None)
+        ols = RollingOLS(window=20, hac_lags=None, mode="batched")
         result = ols.fit_transform(factors, assets)
 
         with pytest.raises(RuntimeError):

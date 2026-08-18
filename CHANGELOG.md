@@ -95,14 +95,25 @@ for a practical before/after table.
 - HAC standard errors are isolated per target: a NaN in one target's residuals
   no longer forces NaN SEs for every target in that window.
 
+### Breaking Changes
+- **`mode` is now required for multi-factor calls.** Passing more than one
+  factor to `fit()` without `mode` raises `ValueError`. Previously, `mode`
+  defaulted to `"batched"` silently, meaning every existing multi-factor
+  caller received marginal (not mutually controlled) betas without having
+  chosen that estimand. The error message names both options and explains
+  their difference. Single-factor calls are unaffected: `mode` remains
+  optional there (the two modes coincide for one factor). Migration: add
+  `mode="batched"` to preserve the old numbers exactly, or switch to
+  `mode="joint"` for the mutually-controlled estimand.
+
 ### Changed
 - **Multi-factor semantics made explicit (F14).** New `mode` parameter:
-  `"batched"` (default, unchanged numeric behaviour) fits one model per
-  factor — marginal given controls, not mutually controlled; `"joint"` fits
-  one model with every factor, mutually controlled. Previously the library
-  ran batched regressions while describing itself as multi-factor without
-  naming the distinction. `warn_correlated_factors=True` (default) now warns
-  once when `mode="batched"` factors are correlated above `|ρ| > 0.3`.
+  `"batched"` fits one model per factor — marginal given controls, not
+  mutually controlled; `"joint"` fits one model with every factor, mutually
+  controlled. Previously the library ran batched regressions while describing
+  itself as multi-factor without naming the distinction.
+  `warn_correlated_factors=True` (default) now warns once when
+  `mode="batched"` factors are correlated above `|ρ| > 0.3`.
 - **Core performance rebuild — no numeric change.** Targets sharing an exact
   complete-case pattern within a window are now factorized once and solved
   as a block of right-hand sides, and the (now correctly window-wise) FWL

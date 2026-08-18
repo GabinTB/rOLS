@@ -134,9 +134,16 @@ def test_fwl_matches_joint_across_supported_configurations(
 def test_lambda_routes_between_fwl_and_joint() -> None:
     targets, factors, controls = _panel(1, "clean")
 
-    assert RollingOLS(window=10, lambda_=0).fit_transform(factors, targets, controls)._path == "fwl"
     assert (
-        RollingOLS(window=10, lambda_=0.1).fit_transform(factors, targets, controls)._path
+        RollingOLS(window=10, lambda_=0, mode="batched")
+        .fit_transform(factors, targets, controls)
+        ._path
+        == "fwl"
+    )
+    assert (
+        RollingOLS(window=10, lambda_=0.1, mode="batched")
+        .fit_transform(factors, targets, controls)
+        ._path
         == "joint"
     )
 
@@ -163,10 +170,10 @@ def test_pattern_grouping_is_exact() -> None:
 def test_shared_pattern_is_bitwise_column_permutation_invariant() -> None:
     targets, factors, controls = _panel(1, "clean")
     order = ["a3", "a0", "a4", "a1", "a2"]
-    original = RollingOLS(window=10).fit_transform(
+    original = RollingOLS(window=10, mode="batched").fit_transform(
         factors, targets, controls, return_control_betas=True
     )
-    permuted = RollingOLS(window=10).fit_transform(
+    permuted = RollingOLS(window=10, mode="batched").fit_transform(
         factors, targets[order], controls, return_control_betas=True
     )
 

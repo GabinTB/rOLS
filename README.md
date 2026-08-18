@@ -141,7 +141,7 @@ for a runnable, end-to-end version covering `mode`, full vs partial R², and
 | `min_periods` | `window` | Minimum complete-case rows to produce a result |
 | `expanding` | `False` | Use expanding window instead of rolling |
 | `fit_intercept` | `True` | Fit an explicit intercept column (not centering) |
-| `mode` | `"batched"` | `"batched"`: one model per factor, marginal-given-controls. `"joint"`: one model with every factor, mutually controlled. See [Batched vs joint](#batched-vs-joint-mode) |
+| `mode` | `None` | **Required when supplying more than one factor** — omitting it raises `ValueError`. `"batched"`: one model per factor, marginal-given-controls. `"joint"`: one model with every factor, mutually controlled. `None` is accepted for single-factor calls (modes coincide). See [Batched vs joint](#batched-vs-joint-mode) |
 | `warn_correlated_factors` | `True` | Warn once when `mode="batched"` and any factor pair has sample `\|correlation\| > 0.3` |
 | `lambda_` | `0.0` | Ridge strength on the normalized objective. `0` = OLS. When `> 0`, `get_se`/`get_tstat` estimate variability around the penalized estimator, not the OLS coefficient — see [HAC standard errors](#hac-standard-errors) |
 | `penalize_controls` | `True` | Penalize controls too when `lambda_ > 0` |
@@ -267,22 +267,35 @@ result.to_long_all()                    # all factors stacked
 
 ## Batched vs joint mode
 
-Given `factors = ["f1", "f2", "f3"]`, it is natural to expect the multivariate
-model `y = α + β₁f₁ + β₂f₂ + β₃f₃ + ε`. That is `mode="joint"`.
+**When you supply more than one factor, you must pass `mode` explicitly.**
+rOLS raises `ValueError` otherwise — the two estimands differ whenever factors
+are correlated, and the library does not choose silently.
 
-`mode="batched"` (the **default**, for backward compatibility) instead fits
-**three separate regressions**, `y ~ 1 + controls + f_j` for each `j`. Each
-`β_j` is conditional on the controls but not on the other factors — a
-legitimate estimator for signal screening, but if `f1` and `f2` are
-correlated, each beta will silently absorb variation attributable to the
-other. This is why `warn_correlated_factors=True` (the default) warns once
-when batched-mode factors are correlated above `|ρ| > 0.3`.
+Given `factors = ["f1", "f2", "f3"]`:
 
 ```python
+# ValueError: 3 factors were supplied but `mode` was not specified.
+ols = RollingOLS(window=60)
+ols.fit(df[["f1", "f2", "f3"]])
+
+# OK — explicit choice:
 ols = RollingOLS(window=60, mode="joint")
 result = ols.fit(df[["f1", "f2", "f3"]]).transform(df[targets])
-# result.get_beta("f1") is now conditional on f2 and f3 too
+# result.get_beta("f1") is conditional on f2 and f3 too
 ```
+
+`mode="joint"` fits the multivariate model `y = α + β₁f₁ + β₂f₂ + β₃f₃ + ε`
+once — each beta is conditional on the controls **and** on every other factor.
+
+`mode="batched"` fits **three separate regressions**, `y ~ 1 + controls + f_j`
+for each `j`. Each `β_j` is conditional on the controls but **not** on the
+other factors — a legitimate estimator for signal screening, but if `f1` and
+`f2` are correlated, each beta will silently absorb variation attributable to
+the other. Use `warn_correlated_factors=True` (the default) to get a one-time
+warning when batched-mode factors are correlated above `|ρ| > 0.3`.
+
+Single-factor calls: `mode` is optional (the modes coincide for one factor) and
+defaults to `"batched"` when omitted.
 
 The two modes coincide exactly for a single factor, or for factors that are
 mutually orthogonal on the estimation sample. Which mode is *faster* depends
@@ -297,9 +310,9 @@ numbers:
   falls back to K separate joint-equivalent solves. Joint mode is exactly one
   such solve, so it is substantially cheaper — measured ~5x faster at K=20.
 
-So: default to batched for OLS screening, prefer joint whenever factors are
-correlated (for correctness), and prefer joint under Ridge regardless (it is
-both more correct *and* faster there).
+So: choose `mode="batched"` for OLS screening (or to reproduce v0.2.x numbers
+exactly), and `mode="joint"` whenever factors are correlated (for correctness)
+or whenever `lambda_ > 0` (it is both more correct and faster there).
 
 ---
 

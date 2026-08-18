@@ -169,27 +169,36 @@ class RollingOLS:
         Use expanding window instead of rolling.
     fit_intercept : bool
         Include an explicit intercept in every window fit. Defaults to True.
-    mode : {"batched", "joint"}
-        How multiple factors are modeled. ``"batched"`` (default) fits a
-        separate model ``y ~ 1 + controls + factor`` per factor — each beta is
-        conditional on the controls but **not** on the other factors, so
-        correlated factors will each absorb variation attributable to the
-        others. ``"joint"`` fits one model with every factor,
+    mode : {"batched", "joint"} or None
+        How multiple factors are modeled.
+
+        **Required when more than one factor is supplied.**  rOLS raises
+        ``ValueError`` in ``fit()`` if ``factors.shape[1] > 1`` and ``mode``
+        was not given — the two estimands differ whenever factors are
+        correlated, and the library does not choose silently.
+
+        ``"batched"`` fits a separate model ``y ~ 1 + controls + factor`` per
+        factor — each beta is conditional on the controls but **not** on the
+        other factors, so correlated factors will each absorb variation
+        attributable to the others.
+
+        ``"joint"`` fits one model with every factor,
         ``y ~ 1 + controls + factor_1 + ... + factor_K``, so each beta is
         conditional on the controls and every other factor — the statistically
-        safer choice whenever factors are correlated. Which is faster depends
-        on ``lambda_``: under OLS (``lambda_ == 0``), batched uses the FWL
-        fast path, sharing one controls-only projection and one GEMM across
-        all K factors, and measured on this implementation it is at or faster
-        than joint at panel scale. Under Ridge (``lambda_ > 0``), FWL is
-        invalid (see ``lambda_`` below), so batched degrades to K separate
-        joint-equivalent solves — joint mode is then substantially cheaper,
-        since it is exactly one such solve. See ``docs/PERFORMANCE.md`` for
-        measured numbers in both regimes. Prefer joint for correctness when
-        factors are correlated; under Ridge it is also the faster choice. The
-        two modes coincide for a single factor or for factors
-        mutually orthogonal on the estimation sample. Stored on the result as
-        ``result.mode``.
+        safer choice whenever factors are correlated.
+
+        Which is faster depends on ``lambda_``: under OLS (``lambda_ == 0``),
+        batched uses the FWL fast path and is at or faster than joint at panel
+        scale. Under Ridge (``lambda_ > 0``), FWL is invalid, so batched
+        degrades to K separate joint-equivalent solves — joint mode is then
+        substantially cheaper. See ``docs/PERFORMANCE.md`` for measured
+        numbers. The two modes coincide for a single factor or for mutually
+        orthogonal factors. Stored on the result as ``result.mode``.
+
+        ``None`` (default) is accepted only for single-factor calls; it
+        resolves to ``"batched"`` internally and is stored as such on the
+        result. Passing ``None`` with more than one factor raises
+        ``ValueError``.
     warn_correlated_factors : bool
         If True (default), emit one ``UserWarning`` when ``mode="batched"``
         with more than one factor and any factor pair has sample
@@ -307,11 +316,11 @@ class RollingOLS:
         cond_warn_threshold: float = 1e10,
         cache_size: int = 1,
         estimate_every: int | str = 1,
-        mode: Literal["batched", "joint"] = "batched",
+        mode: Literal["batched", "joint"] | None = None,
         warn_correlated_factors: bool = True,
     ) -> None:
-        if mode not in ("batched", "joint"):
-            raise ValueError(f"mode must be 'batched' or 'joint', got {mode!r}")
+        if mode not in ("batched", "joint", None):
+            raise ValueError(f"mode must be 'batched', 'joint', or None, got {mode!r}")
         if not isinstance(window, int) or isinstance(window, bool) or window <= 0:
             raise ValueError(f"window must be a positive integer, got {window!r}")
         if min_periods is not None and (
@@ -740,6 +749,29 @@ class RollingOLS:
         self._factor_cols = factors.columns.tolist()
         self._factors = factors
 
+        n_factors_fit = len(self._factor_cols)
+        if n_factors_fit > 1 and self.mode is None:
+            raise ValueError(
+                f"{n_factors_fit} factors were supplied but `mode` was not specified."
+                " rOLS does not\nchoose an estimand for you when multiple factors"
+                " are present:\n\n"
+                '  mode="batched"  fits y ~ 1 + controls + factor_j separately for'
+                " each factor.\n"
+                "                  Each beta is conditional on the controls but NOT"
+                " on the other\n"
+                "                  factors, so correlated factors each absorb"
+                " variation\n"
+                "                  attributable to the others.\n\n"
+                '  mode="joint"    fits y ~ 1 + controls + factor_1 + ... +'
+                " factor_K once.\n"
+                "                  Each beta is conditional on the controls AND"
+                " every other\n"
+                "                  factor.\n\n"
+                "The two coincide when factors are mutually orthogonal on the"
+                " estimation sample.\n"
+                "Pass mode explicitly to continue."
+            )
+
         if controls is not None:
             controls = controls.astype(self.dtype)
             self._control_cols = controls.columns.tolist()
@@ -812,6 +844,9 @@ class RollingOLS:
         asset_chunk_size = self.asset_chunk_size
         n_controls = len(self._control_cols)
         n_factors = len(self._factor_cols)
+        # Resolve sentinel: mode=None is only allowed for single-factor calls
+        # (guaranteed by fit()); resolve to "batched" for all downstream logic.
+        effective_mode = self.mode if self.mode is not None else "batched"
         asset_positions = {asset: position for position, asset in enumerate(asset_cols)}
         factor_penalty = self._penalty_matrix(n_controls, n_factors=1)
         controls_penalty = self._penalty_matrix(n_controls, n_factors=0)
@@ -875,12 +910,12 @@ class RollingOLS:
             return pd.concat([*parts, factors_snapshot[[factor]]], axis=1)
 
         # Warn once when batched mode is used with materially correlated factors.
-        if self.mode == "batched" and self.warn_correlated_factors and n_factors > 1:
+        if effective_mode == "batched" and self.warn_correlated_factors and n_factors > 1:
             _warn_correlated_factors(factors_snapshot)
 
         # FWL shortcut applies only in batched mode (lambda_==0).
         fwl_fit: BatchedFitResult | None = None
-        if self.mode == "batched" and self.lambda_ == 0:
+        if effective_mode == "batched" and self.lambda_ == 0:
             fwl_fit = rolling_fwl_solve(
                 y=assets,
                 factors=factors_snapshot,
@@ -901,7 +936,7 @@ class RollingOLS:
         joint_all_design: pd.DataFrame | None = None
         joint_all_penalty: np.ndarray | None = None
         joint_all_fit: JointFitResult | None = None
-        if self.mode == "joint":
+        if effective_mode == "joint":
             _parts: list[pd.DataFrame] = [] if controls_snapshot is None else [controls_snapshot]
             joint_all_design = pd.concat([*_parts, factors_snapshot], axis=1)
             joint_all_penalty = self._penalty_matrix(n_controls, n_factors)
@@ -919,8 +954,8 @@ class RollingOLS:
             cache_size=self.cache_size,
             estimated_positions=estimated_positions,
         )
-        result._path = "fwl" if (self.mode == "batched" and self.lambda_ == 0) else "joint"
-        result.mode = self.mode
+        result._path = "fwl" if (effective_mode == "batched" and self.lambda_ == 0) else "joint"
+        result.mode = effective_mode
 
         direct_control_betas: dict[str, dict[str, pd.DataFrame]] = {}
         for factor_position, fac in enumerate(self._factor_cols):

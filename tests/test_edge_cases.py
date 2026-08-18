@@ -55,7 +55,9 @@ class TestAllNaNInputs:
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = RollingOLS(window=10, warn_singular=True).fit_transform(factors, targets)
+            result = RollingOLS(window=10, warn_singular=True, mode="batched").fit_transform(
+                factors, targets
+            )
 
         beta = result.get_beta("f0")
         assert beta.isna().all().all()
@@ -68,7 +70,7 @@ class TestAllNaNInputs:
         factors, _, targets = _panel(30, n_targets=2)
         targets.iloc[:, 0] = np.nan
 
-        result = RollingOLS(window=10).fit_transform(factors, targets)
+        result = RollingOLS(window=10, mode="batched").fit_transform(factors, targets)
         beta = result.get_beta("f0")
 
         assert beta["a0"].isna().all()
@@ -78,7 +80,7 @@ class TestAllNaNInputs:
 class TestBoundaryWindowSizes:
     def test_window_one_produces_exact_interpolation(self):
         factors, _, targets = _panel(10)
-        result = RollingOLS(window=1, min_periods=1, dtype="float64").fit_transform(
+        result = RollingOLS(window=1, min_periods=1, dtype="float64", mode="batched").fit_transform(
             factors, targets
         )
         # With window=1 and an intercept, a single point is fit exactly:
@@ -90,7 +92,7 @@ class TestBoundaryWindowSizes:
 
     def test_window_two_min_periods_one(self):
         factors, _, targets = _panel(15)
-        result = RollingOLS(window=2, min_periods=1, dtype="float64").fit_transform(
+        result = RollingOLS(window=2, min_periods=1, dtype="float64", mode="batched").fit_transform(
             factors, targets
         )
         beta = result.get_beta("f0")
@@ -100,19 +102,25 @@ class TestBoundaryWindowSizes:
         n_observations = 5
         window = 10
         factors, _, targets = _panel(n_observations)
-        result = RollingOLS(window=window, min_periods=window).fit_transform(factors, targets)
+        result = RollingOLS(window=window, min_periods=window, mode="batched").fit_transform(
+            factors, targets
+        )
         assert result.get_beta("f0").isna().all().all()
 
     def test_t_equals_window_minus_one_no_estimate(self):
         window = 10
         factors, _, targets = _panel(window - 1)
-        result = RollingOLS(window=window, min_periods=window).fit_transform(factors, targets)
+        result = RollingOLS(window=window, min_periods=window, mode="batched").fit_transform(
+            factors, targets
+        )
         assert result.get_beta("f0").isna().all().all()
 
     def test_t_equals_window_produces_exactly_one_estimate(self):
         window = 10
         factors, _, targets = _panel(window)
-        result = RollingOLS(window=window, min_periods=window).fit_transform(factors, targets)
+        result = RollingOLS(window=window, min_periods=window, mode="batched").fit_transform(
+            factors, targets
+        )
         beta = result.get_beta("f0")
         assert beta.iloc[:-1].isna().all().all()
         assert beta.iloc[-1].notna().all()
@@ -121,7 +129,7 @@ class TestBoundaryWindowSizes:
 class TestSingletonDimensions:
     def test_single_target_single_factor_single_control(self):
         factors, controls, targets = _panel(40, n_factors=1, n_controls=1, n_targets=1)
-        result = RollingOLS(window=15, dtype="float64").fit_transform(
+        result = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
             factors, targets, controls=controls, return_control_betas=True
         )
         assert result.get_beta("f0").shape == (40, 1)
@@ -152,7 +160,9 @@ class TestSingularAndDegenerateDesigns:
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = RollingOLS(window=window, dtype="float64").fit_transform(factors, targets)
+            result = RollingOLS(window=window, dtype="float64", mode="batched").fit_transform(
+                factors, targets
+            )
 
         beta = result.get_beta("f0")
         assert not np.isinf(beta.to_numpy()).any()
@@ -167,7 +177,9 @@ class TestSingularAndDegenerateDesigns:
     def test_constant_target_gives_nan_r2_not_error(self):
         factors, _, targets = _panel(30)
         targets.iloc[:, 0] = 7.0
-        result = RollingOLS(window=10, dtype="float64").fit_transform(factors, targets)
+        result = RollingOLS(window=10, dtype="float64", mode="batched").fit_transform(
+            factors, targets
+        )
         r2 = result.get_r2("f0")
         # SST is 0 for a constant target: R² is undefined (0/0), not inf.
         assert (
@@ -215,7 +227,7 @@ class TestRidgeExtremes:
         window = 20
         factors, _, targets = _panel(window, n_factors=1, seed=6)
         result = RollingOLS(
-            window=window, min_periods=window, lambda_=1e12, dtype="float64"
+            window=window, min_periods=window, lambda_=1e12, dtype="float64", mode="batched"
         ).fit_transform(factors, targets)
 
         beta = result.get_beta("f0").iloc[-1, 0]
@@ -237,7 +249,7 @@ class TestEWMAExtreme:
 
         factors, _, targets = _panel(40, n_factors=1, seed=7)
         result = RollingOLS(
-            window=window, min_periods=window, ewma_halflife=1, dtype="float64"
+            window=window, min_periods=window, ewma_halflife=1, dtype="float64", mode="batched"
         ).fit_transform(factors, targets)
         beta = result.get_beta("f0")
         assert np.isfinite(beta.to_numpy()[beta.notna().to_numpy()]).all()
@@ -248,7 +260,7 @@ class TestHACBoundaries:
         window = 25
         factors, _, targets = _panel(window, n_factors=1, seed=8)
         result = RollingOLS(
-            window=window, min_periods=window, hac_lags=0, dtype="float64"
+            window=window, min_periods=window, hac_lags=0, dtype="float64", mode="batched"
         ).fit_transform(factors, targets)
 
         se = result.get_se("f0").iloc[-1, 0]
@@ -268,7 +280,7 @@ class TestHACBoundaries:
         window = 15
         factors, _, targets = _panel(window * 2, n_factors=1, seed=9)
         result = RollingOLS(
-            window=window, min_periods=window, hac_lags=window + 5, dtype="float64"
+            window=window, min_periods=window, hac_lags=window + 5, dtype="float64", mode="batched"
         ).fit_transform(factors, targets)
 
         se = result.get_se("f0")
@@ -282,7 +294,7 @@ class TestCadenceBeyondSampleSize:
         window = 10
         factors, _, targets = _panel(n_observations, n_factors=1, seed=10)
         result = RollingOLS(
-            window=window, min_periods=window, estimate_every=50, dtype="float64"
+            window=window, min_periods=window, estimate_every=50, dtype="float64", mode="batched"
         ).fit_transform(factors, targets)
 
         beta = result.get_beta("f0")
