@@ -204,6 +204,11 @@ class RollingOLS:
         strength regardless of window length, EWMA half-life, or the number
         of complete rows in a window — the gram diagonal is always 1 in the
         solve coordinates.  ``0.0`` gives OLS.
+
+        **Inference note.** When ``lambda_ > 0``, ``get_se()`` and
+        ``get_tstat()`` estimate the sampling variability of the penalized
+        estimator around the penalized pseudo-true parameter β_λ, not the
+        unpenalized population coefficient β₀.  See ``get_se`` for details.
     penalize_controls : bool
         Penalize controls along with factors when ``lambda_ > 0``. Defaults to
         True. Set to False to treat controls as unpenalized nuisance regressors.

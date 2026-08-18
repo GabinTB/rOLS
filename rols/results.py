@@ -375,7 +375,21 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Full-index Newey-West HAC SEs, with NaN at skipped endpoints."""
+        """Newey-West HAC standard errors, with NaN at skipped endpoints.
+
+        The sandwich estimates the sampling variability of the fixed-penalty
+        estimator **β̂_λ** around the penalized pseudo-true parameter **β_λ**.
+        It does **not** correct regularization bias relative to the unpenalized
+        population coefficient β₀, and it treats the penalty as fixed rather
+        than estimated or selected from the data.  Intervals should not be read
+        as nominal-coverage confidence intervals for β₀, and selecting
+        ``lambda_`` by cross-validation or any data-driven procedure invalidates
+        the nominal level further.  For OLS (``lambda_ == 0``), β_λ = β₀ and
+        this distinction collapses.
+
+        Requires ``hac_lags`` to be set on the constructor (raises otherwise).
+        Computation is lazy and streams one endpoint at a time.
+        """
         return self._full_index(self._standard_errors_for(factor, assets))
 
     def get_tstat(
@@ -383,7 +397,12 @@ class RollingOLSResult:
         factor: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """HAC t-statistic, derived as beta divided by standard error."""
+        """HAC t-statistic: ``beta / se``, with NaN where undefined.
+
+        See ``get_se`` for the estimand.  The t-statistic for Ridge should not
+        be compared against OLS critical values without accounting for the bias
+        of β̂_λ relative to β₀.
+        """
         tstat = self.get_beta(factor, assets).div(self.get_se(factor, assets))
         return tstat.replace([float("inf"), float("-inf")], float("nan"))
 

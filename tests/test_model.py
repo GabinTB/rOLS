@@ -2643,3 +2643,27 @@ class TestRidgeEffectiveDof:
         )
         # Ridge dof strictly larger
         assert (ridge_dof.loc[shared].values > ols_dof.loc[shared].values).all()
+
+
+class TestRidgeInferenceDocumentation:
+    """SPECIFICATION.md §10 and README correctly document Ridge HAC estimand."""
+
+    def test_specification_contains_estimand_distinction(self):
+        """SPECIFICATION.md §10 must define β_λ and β₀ and state the caveat."""
+        spec = __import__("pathlib").Path(__file__).parent.parent / "docs" / "SPECIFICATION.md"
+        text = spec.read_text()
+        # Section 10 must be present and contain the three objects
+        assert "β₀" in text or "beta_0" in text.lower() or "unpenalized population" in text
+        assert "β_λ" in text or "beta_lambda" in text.lower() or "pseudo-true" in text
+        assert "β̂_λ" in text or "beta_hat" in text.lower() or "finite-window estimator" in text
+        # Must state the key limitation
+        assert "regularization bias" in text
+        assert "nominal" in text or "nominal-coverage" in text
+
+    def test_readme_ridge_se_caveat_present(self):
+        """README HAC section must note Ridge caveat when lambda_ > 0."""
+        readme = __import__("pathlib").Path(__file__).parent.parent / "README.md"
+        text = readme.read_text()
+        # The Ridge caveat phrase must appear in the HAC section
+        assert "penalized pseudo-true" in text or "β_λ" in text
+        assert "nominal-coverage" in text or "nominal coverage" in text

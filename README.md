@@ -143,7 +143,7 @@ for a runnable, end-to-end version covering `mode`, full vs partial R², and
 | `fit_intercept` | `True` | Fit an explicit intercept column (not centering) |
 | `mode` | `"batched"` | `"batched"`: one model per factor, marginal-given-controls. `"joint"`: one model with every factor, mutually controlled. See [Batched vs joint](#batched-vs-joint-mode) |
 | `warn_correlated_factors` | `True` | Warn once when `mode="batched"` and any factor pair has sample `\|correlation\| > 0.3` |
-| `lambda_` | `0.0` | Ridge strength on the normalized objective. `0` = OLS |
+| `lambda_` | `0.0` | Ridge strength on the normalized objective. `0` = OLS. When `> 0`, `get_se`/`get_tstat` estimate variability around the penalized estimator, not the OLS coefficient — see [HAC standard errors](#hac-standard-errors) |
 | `penalize_controls` | `True` | Penalize controls too when `lambda_ > 0` |
 | `ewma_halflife` | `None` | Exponentially weight observations within each window (half-life in periods). `None` = equal weighting. Not compatible with `expanding=True` |
 | `adj_r2` | `False` | Report adjusted R² from `get_r2`/`get_partial_r2` instead of R² |
@@ -378,6 +378,15 @@ Each standard error is computed from the same current-window fit as its beta.
 The sandwich uses the full design, including the intercept and controls, the
 same complete-case rows, Bartlett lag weights, and the estimator's observation
 weights. Computation is lazy and streams one endpoint at a time.
+
+**Ridge inference caveat.** When `lambda_ > 0`, the sandwich estimates the
+sampling variability of the fixed-penalty estimator β̂_λ around the penalized
+pseudo-true parameter β_λ — not around the unpenalized population coefficient
+β₀. Intervals from `get_se` should not be read as nominal-coverage confidence
+intervals for β₀. The shortfall grows with `lambda_`, and selecting `lambda_`
+from the data (cross-validation, grid search) invalidates the nominal level
+further. See [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) §10 for the full
+estimand definition. For OLS (`lambda_ = 0`) this distinction collapses.
 
 ### EWMA observation weighting
 

@@ -392,6 +392,38 @@ interpreted as classical hypothesis-test quantities.
 
 ## 10. HAC inference
 
+### Estimand
+
+Three distinct objects must be named and distinguished:
+
+| Symbol | Meaning |
+|---|---|
+| β₀ | unpenalized population coefficient |
+| β_λ | penalized pseudo-true target — the probability limit of the Ridge estimator at fixed λ |
+| β̂_λ | the finite-window estimator rOLS reports |
+
+`get_se()` and `get_tstat()` apply to the Ridge estimator β̂_λ. The sandwich
+estimates the **sampling variability of β̂_λ around β_λ**. It does **not**:
+
+- correct regularization bias relative to β₀ — a nominal 95% interval does not
+  have 95% coverage for β₀, and the shortfall grows with λ;
+- account for λ being selected from the data — the penalty is treated as fixed
+  and known, so cross-validated or tuned λ invalidates the nominal level
+  further.
+
+> Ridge HAC standard errors estimate the sampling variability of the
+> fixed-penalty regularized estimator β̂_λ around the penalized pseudo-true
+> parameter β_λ. They do not correct regularization bias relative to an
+> unpenalized population coefficient β₀, and they treat the penalty as fixed
+> rather than estimated or selected from the data. Intervals constructed from
+> them should not be read as nominal-coverage confidence intervals for β₀, and
+> selecting `lambda_` by cross-validation or any other data-driven procedure
+> invalidates the nominal level further.
+
+For the OLS case (λ = 0), β_λ = β₀ and this distinction collapses.
+
+### Sandwich formula
+
 HAC inference uses the same current-window fit, complete-case sample, design,
 weights, and coefficient convention as the reported estimate. Let `z_s` be the
 exact solve-coordinate design row, including the intercept when enabled and
