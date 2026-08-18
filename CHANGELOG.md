@@ -5,6 +5,23 @@ All notable changes to rOLS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-08-18
+
+### Added
+- Ridge effective degrees of freedom `df_eff = tr[G(G+P)⁻¹]` used in
+  adjusted R² and residual-dof, replacing the raw parameter count (#15).
+- `get_se` / `get_tstat` docstrings and `SPECIFICATION.md` §10 now define
+  the Ridge inference estimand (β_λ vs β₀) and the nominal-coverage caveat (#16).
+- `tests/test_hac_reference.py`: five structurally independent validations
+  of the Ridge HAC sandwich (#17).
+
+### Breaking Changes
+- `mode` is now required when supplying more than one factor to `fit()`;
+  omitting it raises `ValueError` with a message that names both options.
+  Single-factor calls and calls with an explicit `mode` are unaffected (#18).
+
+---
+
 ## [0.3.0] — 2026-08-18
 
 **A correctness release.** An independent four-reviewer audit (13 August 2026,
@@ -255,6 +272,7 @@ for a practical before/after table.
   partialling, rolling Gram-Schmidt orthogonalization, Newey-West HAC standard
   errors, lagged signals, and long-format output.
 
+[0.3.1]: https://github.com/GabinTB/rOLS/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/GabinTB/rOLS/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/GabinTB/rOLS/compare/v0.1.2...v0.2.1
 [0.1.2]: https://github.com/GabinTB/rOLS/compare/v0.1.1...v0.1.2
