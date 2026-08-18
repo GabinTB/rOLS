@@ -24,6 +24,9 @@ class OracleFit:
     sst: float
     n_used: int
     n_eff: float
+    # Effective dof: tr[G (G + P)^{-1}] in standardized coordinates.
+    # Equals the raw parameter count when lambda_ == 0 (OLS/WLS).
+    df_eff: float = 0.0
 
 
 def _nan_fit(n_observations: int, n_slopes: int) -> OracleFit:
@@ -36,6 +39,7 @@ def _nan_fit(n_observations: int, n_slopes: int) -> OracleFit:
         sst=np.nan,
         n_used=0,
         n_eff=np.nan,
+        df_eff=np.nan,
     )
 
 
@@ -169,6 +173,10 @@ def oracle_fit_window(
     else:
         sst = float(np.sum(complete_weights * complete_target**2))
     n_eff = float(1.0 / np.sum(complete_weights**2))
+    # Effective dof: tr[(G + P)^{-1} G] in standardized coords.
+    design_gram = weighted_design.T @ weighted_design
+    A = design_gram + penalty_matrix
+    df_eff = float(np.trace(np.linalg.solve(A, design_gram)))
     return OracleFit(
         coef=slopes,
         intercept=float(intercept),
@@ -178,6 +186,7 @@ def oracle_fit_window(
         sst=sst,
         n_used=int(complete_case.sum()),
         n_eff=n_eff,
+        df_eff=df_eff,
     )
 
 
@@ -300,7 +309,8 @@ def oracle_rolling(
                     continue
 
                 r2 = np.nan if fit.sst <= 0 else 1 - fit.ssr / fit.sst
-                residual_dof = fit.n_eff - n_slopes - int(fit_intercept)
+                # Use df_eff (effective dof) for Ridge; equals n_params for OLS.
+                residual_dof = fit.n_eff - fit.df_eff
                 if residual_dof > 0 and np.isfinite(r2):
                     if fit_intercept:
                         adj_r2 = 1 - (1 - r2) * (fit.n_eff - 1) / residual_dof

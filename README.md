@@ -335,9 +335,15 @@ complete-case sample. This is the number to read when factors are correlated
 it.
 
 `adj_r2=True` on the constructor makes both accessors report the adjusted
-statistic, using effective sample size (`n_eff`, which equals the raw
-complete-case count under equal weighting and something smaller under EWMA)
-rather than a raw row count.
+statistic. The denominator uses both effective sample size (`n_eff`, which
+equals the raw complete-case count under equal weighting and something smaller
+under EWMA) and effective degrees of freedom (`df_eff = tr[G(G+P)^{-1}]`).
+For OLS this reduces to the classical `n_eff - p - 1` denominator; for Ridge
+`df_eff < p` so the penalty's shrinkage is reflected in the adjustment.
+
+Under Ridge, `get_r2` and `get_partial_r2` are descriptive fit metrics rather
+than unbiased population estimators — penalized residuals are not orthogonal
+to the regressors, so `get_partial_r2` can be negative.
 
 ---
 

@@ -208,7 +208,7 @@ def test_lazy_accessors_match_eager_joint_ridge_outputs() -> None:
                 **frame_kwargs,
             ),
             "get_residuals": residuals,
-            "get_dof": pd.DataFrame(eager.n_eff - design.shape[1] - 1, **frame_kwargs),
+            "get_dof": pd.DataFrame(eager.n_eff - eager.df_eff, **frame_kwargs),
             "get_n_used": pd.DataFrame(eager.n_used, **frame_kwargs),
             "get_se": rolling_hac_se(
                 targets,

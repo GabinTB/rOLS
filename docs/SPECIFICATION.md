@@ -343,12 +343,26 @@ $$
 
 ### Adjusted R-squared
 
-Let `p` be the number of estimated slope coefficients. With an intercept,
+Let `df_eff` be the effective degrees of freedom consumed by the fit, defined
+as
+
+$$
+d_{\mathrm{eff}}
+= \operatorname{tr}\!\left[G\,(G+P)^{-1}\right],
+$$
+
+where `G = Z'WZ` is the weighted design Gram matrix in standardized
+coordinates and `P` is the penalty matrix in those same coordinates. For
+OLS (`lambda_ == 0`), `P = 0`, so `d_eff = tr[I_p] = p` — the raw parameter
+count, intercept included. For Ridge (`lambda_ > 0`), `d_eff < p` and
+decreases monotonically as regularization increases.
+
+With an intercept and effective sample size `n_eff`, the adjusted R² is
 
 $$
 \overline R^2
 = 1-(1-R^2)
-  \frac{n_{\mathrm{eff}}-1}{n_{\mathrm{eff}}-p-1}.
+  \frac{n_{\mathrm{eff}}-1}{n_{\mathrm{eff}}-d_{\mathrm{eff}}}.
 $$
 
 Without an intercept, the uncentred adjustment is
@@ -356,16 +370,25 @@ Without an intercept, the uncentred adjustment is
 $$
 \overline R^2
 = 1-(1-R^2)
-  \frac{n_{\mathrm{eff}}}{n_{\mathrm{eff}}-p}.
+  \frac{n_{\mathrm{eff}}}{n_{\mathrm{eff}}-d_{\mathrm{eff}}}.
 $$
 
-The adjusted statistic is NaN when its residual degrees of freedom are not
-positive. Ridge uses the same reported convention; it does not claim an
-effective-degrees-of-freedom adjustment based on the smoothing matrix.
+The adjusted statistic is NaN when its residual degrees of freedom
+`n_eff - d_eff` are not positive.
+
+`get_dof(factor)` returns `n_eff - d_eff` at every endpoint.
+
+**Ridge R² interpretation.** Under Ridge, `get_r2` and `get_partial_r2` are
+descriptive fit metrics, not unbiased estimators of population R². The
+penalized residuals are not orthogonal to the regressors, so `get_partial_r2`
+can be negative. These statistics are still useful for monitoring relative fit
+quality across windows or comparing penalty strengths; they should not be
+interpreted as classical hypothesis-test quantities.
 
 > **v0.2.1 deviates:** `get_r2` reports a residual-on-residual partial
 > R-squared as if it were full-model R-squared. Its adjusted formula hardcodes
-> one slope and uses integer counts under EWMA.
+> one slope, uses integer counts under EWMA, and does not apply the
+> effective-dof correction for Ridge.
 
 ## 10. HAC inference
 

@@ -32,6 +32,8 @@ class JointFitResult:
     sst: np.ndarray
     n_used: np.ndarray
     n_eff: np.ndarray
+    # Effective dof per endpoint × target; NaN where the window was skipped.
+    df_eff: np.ndarray | None = None
     n_singular: int = 0
     n_ill_conditioned: int = 0
 
@@ -46,6 +48,10 @@ class JointWindowResult:
     sst: np.ndarray
     n_used: int
     n_eff: float
+    # Effective degrees of freedom for Ridge: tr[G (G + P)^{-1}] in standardized
+    # coordinates, where G = weighted_design.T @ weighted_design and P is the
+    # penalty matrix.  Equals the raw parameter count when lambda_ == 0.
+    df_eff: float = 0.0
     factor_se: np.ndarray | None = None
     hac_residuals: np.ndarray | None = None
     hac_bread_invalid: bool = False
@@ -380,6 +386,11 @@ def _solve_joint_window_block(
         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
             endpoint_residual = targets[-1] - design[-1] @ parameters
     n_eff = _effective_sample_size(complete_weights)
+    # Effective degrees of freedom: tr[G (G + P)^{-1}] in standardized coords.
+    # solve(A, G) gives A^{-1} G; trace(A^{-1} G) = trace(G A^{-1}) by cyclicity.
+    # When P == 0 (OLS), this equals the raw parameter count exactly.
+    A = design_gram + penalty
+    df_eff = float(np.trace(np.linalg.solve(A, design_gram)))
     factor_se = None
     hac_bread_invalid = False
     n_invalid_hac_variance = 0
@@ -388,7 +399,7 @@ def _solve_joint_window_block(
             solve_design=solve_design,
             residuals=residuals,
             complete_weights=complete_weights,
-            bread=design_gram + penalty,
+            bread=A,
             scales=scales,
             n_eff=n_eff,
             n_lags=hac_lags,
@@ -401,6 +412,7 @@ def _solve_joint_window_block(
         sst=sst,
         n_used=n_used,
         n_eff=n_eff,
+        df_eff=df_eff,
         factor_se=factor_se,
         hac_residuals=residuals.copy() if return_hac_residuals else None,
         hac_bread_invalid=hac_bread_invalid,
@@ -492,6 +504,7 @@ def rolling_joint_solve(
     sst = np.full((output_size, n_targets), np.nan)
     n_used = np.full((output_size, n_targets), np.nan)
     n_eff = np.full((output_size, n_targets), np.nan)
+    df_eff_out = np.full((output_size, n_targets), np.nan)
 
     def store_block(
         endpoint: int,
@@ -510,6 +523,7 @@ def rolling_joint_solve(
         sst[endpoint, target_positions] = solved.sst
         n_used[endpoint, target_positions] = solved.n_used
         n_eff[endpoint, target_positions] = solved.n_eff
+        df_eff_out[endpoint, target_positions] = solved.df_eff
 
     def solve_grouped_endpoint(
         endpoint: int,
@@ -650,6 +664,19 @@ def rolling_joint_solve(
             window_sst = np.einsum("w,twn->tn", window_weights, centered_targets**2)
         else:
             window_sst = np.einsum("w,twn->tn", window_weights, target_windows**2)
+        # Vectorized df_eff: tr[(G + P)^{-1} G] per window (same for all clean targets).
+        # solve(A_batch, G_batch) gives A^{-1} G per window; trace = effective dof.
+        # Use safe copies for invalid windows (singular / ill-scaled) to avoid
+        # LinAlgError; their output is overwritten with NaN afterward.
+        A_batch = design_gram + penalty_matrix[None, :, :]  # (T, p, p)
+        safe_A_batch = A_batch.copy()
+        safe_A_batch[~valid_windows] = np.eye(n_parameters)
+        safe_gram_for_df = design_gram.copy()
+        safe_gram_for_df[~valid_windows] = np.eye(n_parameters)
+        invA_gram = np.linalg.solve(safe_A_batch, safe_gram_for_df)  # (T, p, p)
+        df_eff_windows = np.trace(invA_gram, axis1=1, axis2=2).copy()  # (T,)
+        df_eff_windows[~valid_windows] = np.nan
+        scalar_n_eff = _effective_sample_size(window_weights)
         for local_position, target_position in enumerate(clean_target_positions):
             if fit_intercept:
                 intercept[full_output_positions, target_position] = parameters[:, 0, local_position]
@@ -663,7 +690,8 @@ def rolling_joint_solve(
             ssr[full_output_positions, target_position] = window_ssr[:, local_position]
             sst[full_output_positions, target_position] = window_sst[:, local_position]
             n_used[full_output_positions, target_position] = window
-            n_eff[full_output_positions, target_position] = _effective_sample_size(window_weights)
+            n_eff[full_output_positions, target_position] = scalar_n_eff
+            df_eff_out[full_output_positions, target_position] = df_eff_windows
 
         early_mask = selected_endpoints < window - 1
         for endpoint, output_position in zip(
@@ -730,6 +758,7 @@ def rolling_joint_solve(
         sst=sst,
         n_used=n_used,
         n_eff=n_eff,
+        df_eff=df_eff_out,
         n_singular=n_singular,
         n_ill_conditioned=n_ill_conditioned,
     )

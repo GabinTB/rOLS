@@ -524,6 +524,11 @@ class RollingOLS:
             sst=np.concatenate([fit.sst for fit in fits], axis=1),
             n_used=np.concatenate([fit.n_used for fit in fits], axis=1),
             n_eff=np.concatenate([fit.n_eff for fit in fits], axis=1),
+            df_eff=(
+                np.concatenate([fit.df_eff for fit in fits], axis=1)
+                if all(fit.df_eff is not None for fit in fits)
+                else None
+            ),
             n_singular=sum(fit.n_singular for fit in fits),
             n_ill_conditioned=sum(fit.n_ill_conditioned for fit in fits),
         )
@@ -540,9 +545,20 @@ class RollingOLS:
         n_used_values: np.ndarray,
         assets: pd.DataFrame,
         n_controls: int,
+        df_eff_values: np.ndarray | None = None,
     ) -> FactorStatistics:
-        """Apply dof adjustment and wrap one factor's derived statistics."""
-        residual_dof = n_eff_values - (n_controls + 1) - int(self.fit_intercept)
+        """Apply dof adjustment and wrap one factor's derived statistics.
+
+        When ``df_eff_values`` is provided (Ridge or any path that computed
+        effective dof), the residual degrees of freedom use it directly:
+        ``n_eff - df_eff``.  For OLS paths that do not supply it the classic
+        formula ``n_eff - (n_controls + 1) - fit_intercept`` is used; the two
+        are numerically identical when ``lambda_ == 0``.
+        """
+        if df_eff_values is not None:
+            residual_dof = n_eff_values - df_eff_values
+        else:
+            residual_dof = n_eff_values - (n_controls + 1) - int(self.fit_intercept)
         if self.adj_r2:
             numerator_dof = n_eff_values - int(self.fit_intercept)
             adjustment = np.divide(
@@ -570,6 +586,7 @@ class RollingOLS:
         n_used: np.ndarray,
         assets: pd.DataFrame,
         n_controls: int,
+        df_eff: np.ndarray | None = None,
     ) -> FactorStatistics:
         """Derive full and partial R² from one lazily recomputed joint fit."""
         r2_values = 1.0 - np.divide(
@@ -591,6 +608,7 @@ class RollingOLS:
             n_used,
             assets,
             n_controls,
+            df_eff_values=df_eff,
         )
 
     def _statistics_from_patterns(
@@ -669,6 +687,11 @@ class RollingOLS:
                 np.nan,
             )
 
+        # FWL path always uses lambda_ == 0; df_eff equals the raw parameter
+        # count.  Compute analytically so _finalize_statistics uses the same
+        # formula as the joint path (no branch on lambda_).
+        n_params = float(n_controls + 1 + int(self.fit_intercept))
+        df_eff_values = np.where(np.isfinite(n_eff_values), n_params, np.nan)
         return self._finalize_statistics(
             r2_values,
             partial_r2_values,
@@ -676,6 +699,7 @@ class RollingOLS:
             n_used_values,
             assets,
             n_controls,
+            df_eff_values=df_eff_values,
         )
 
     # ------------------------------------------------------------------
@@ -832,6 +856,11 @@ class RollingOLS:
                 sst=np.concatenate([fit.sst for fit in fits], axis=1),
                 n_used=np.concatenate([fit.n_used for fit in fits], axis=1),
                 n_eff=np.concatenate([fit.n_eff for fit in fits], axis=1),
+                df_eff=(
+                    np.concatenate([fit.df_eff for fit in fits], axis=1)
+                    if all(fit.df_eff is not None for fit in fits)
+                    else None
+                ),
                 n_singular=sum(fit.n_singular for fit in fits),
                 n_ill_conditioned=sum(fit.n_ill_conditioned for fit in fits),
             )
@@ -973,6 +1002,7 @@ class RollingOLS:
                 fit.n_used,
                 stored_targets(selected_assets),
                 n_controls,
+                df_eff=fit.df_eff,
             )
 
         if joint_all_fit is not None:
@@ -981,9 +1011,10 @@ class RollingOLS:
             _joint_sst = joint_all_fit.sst
             _joint_n_eff = joint_all_fit.n_eff
             _joint_n_used = joint_all_fit.n_used
+            _joint_df_eff = joint_all_fit.df_eff  # effective dof (Ridge-aware)
             _factor_cols_snapshot = list(self._factor_cols)
-            # dof accounts for all K factors: pass (n_controls + K - 1) so that
-            # _finalize_statistics computes residual_dof = n_eff - (n_controls+K) - fit_intercept.
+            # Fallback integer dof for adj-R² when df_eff is unavailable:
+            # (n_controls + K) slopes + intercept → same as the old n_controls trick.
             _n_controls_for_dof = n_controls + n_factors - 1
             # Complete-case mask for all factors (restricts the reduced model to
             # the same rows used by the full joint model).
@@ -998,12 +1029,14 @@ class RollingOLS:
                     sst = _joint_sst
                     n_eff = _joint_n_eff
                     n_used = _joint_n_used
+                    df_eff = _joint_df_eff
                 else:
                     sel = [asset_positions[a] for a in selected_assets]
                     full_ssr = _joint_ssr[:, sel]
                     sst = _joint_sst[:, sel]
                     n_eff = _joint_n_eff[:, sel]
                     n_used = _joint_n_used[:, sel]
+                    df_eff = _joint_df_eff[:, sel] if _joint_df_eff is not None else None
 
                 # Reduced model for partial R²: all factors except this one,
                 # restricted to the full model's complete-case rows so the two
@@ -1038,6 +1071,7 @@ class RollingOLS:
                     n_used,
                     stored_targets(selected_assets),
                     _n_controls_for_dof,
+                    df_eff=df_eff,
                 )
 
             result._statistics_loader = derive_joint_mode_statistics

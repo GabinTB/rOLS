@@ -2517,3 +2517,129 @@ class TestRollingOLSBatchedVsJoint:
             assert np.isfinite(pr2.values).all()
             assert (r2.values >= 0).all()
             assert (r2.values <= 1.0 + 1e-6).all()
+
+
+class TestRidgeEffectiveDof:
+    """df_eff = tr[G(G+P)^{-1}] is correct for OLS and Ridge."""
+
+    def _simple_panel(self, T=100, seed=7) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        rng = np.random.default_rng(seed)
+        idx = pd.RangeIndex(T)
+        factors = pd.DataFrame({"f": rng.normal(size=T)}, index=idx)
+        controls = pd.DataFrame({"c": rng.normal(size=T)}, index=idx)
+        targets = pd.DataFrame({"a": rng.normal(size=T)}, index=idx)
+        return factors, controls, targets
+
+    def test_ols_dof_equals_param_count(self):
+        """When lambda_=0, df_eff must equal the raw parameter count.
+
+        For one factor + one control + intercept = 3 parameters,
+        df_eff == 3 so residual_dof == n_eff - 3 at every valid endpoint.
+        """
+        factors, controls, targets = self._simple_panel()
+        W = 20
+        n_params = 3  # intercept + 1 control + 1 factor
+        result = RollingOLS(window=W, min_periods=W, dtype="float64").fit_transform(
+            factors, targets, controls=controls
+        )
+        dof = result.get_dof("f").dropna()
+        n_used = result.get_n_used("f").dropna()
+        # Under equal weighting n_eff == n_used == W.
+        np.testing.assert_allclose(
+            dof.values,
+            n_used.values - n_params,
+            rtol=1e-10,
+            atol=1e-10,
+        )
+
+    def test_ridge_dof_strictly_less_than_param_count(self):
+        """With lambda_>0, df_eff < n_params so residual_dof > n_eff - n_params."""
+        factors, controls, targets = self._simple_panel()
+        W = 20
+        ols_result = RollingOLS(window=W, min_periods=W, dtype="float64").fit_transform(
+            factors, targets, controls=controls
+        )
+        ridge_result = RollingOLS(
+            window=W, min_periods=W, lambda_=0.5, dtype="float64"
+        ).fit_transform(factors, targets, controls=controls)
+        ols_dof = ols_result.get_dof("f").dropna()
+        ridge_dof = ridge_result.get_dof("f").dropna()
+        shared = ols_dof.index.intersection(ridge_dof.index)
+        # Ridge residual dof must be strictly larger than OLS (df_eff is smaller).
+        assert (ridge_dof.loc[shared].values > ols_dof.loc[shared].values).all(), (
+            "Ridge residual dof should exceed OLS residual dof "
+            "(smaller df_eff → more residual room)"
+        )
+
+    def test_ridge_dof_decreases_with_larger_lambda(self):
+        """Larger lambda_ → smaller df_eff → larger residual dof."""
+        factors, controls, targets = self._simple_panel(T=80)
+        W = 20
+        lambdas = [0.01, 0.1, 1.0, 10.0]
+        prev_dof = None
+        for lam in lambdas:
+            result = RollingOLS(
+                window=W, min_periods=W, lambda_=lam, dtype="float64"
+            ).fit_transform(factors, targets, controls=controls)
+            dof = result.get_dof("f").dropna()
+            if prev_dof is not None:
+                shared = prev_dof.index.intersection(dof.index)
+                # Larger lambda → larger residual dof
+                assert (dof.loc[shared].values > prev_dof.loc[shared].values).all(), (
+                    f"Residual dof should increase with lambda_; failed at lambda_={lam}"
+                )
+            prev_dof = dof
+
+    def test_adj_r2_with_ridge_matches_oracle(self):
+        """adj_r2=True with Ridge uses df_eff, matching the scalar oracle."""
+        factors, controls, targets = self._simple_panel(T=80)
+        result = RollingOLS(
+            window=20,
+            min_periods=15,
+            lambda_=0.3,
+            adj_r2=True,
+            dtype="float64",
+        ).fit_transform(factors, targets, controls=controls)
+        expected = oracle_rolling(
+            targets,
+            factors,
+            controls,
+            window=20,
+            min_periods=15,
+            expanding=False,
+            lambda_=0.3,
+        )
+        np.testing.assert_allclose(
+            result.get_r2("f"),
+            expected["adj_r2"]["f"],
+            rtol=1e-9,
+            atol=1e-12,
+            equal_nan=True,
+        )
+
+    def test_joint_mode_ridge_dof_strictly_less_than_param_count(self):
+        """Joint mode + Ridge: df_eff < total params → larger residual dof."""
+        rng = np.random.default_rng(42)
+        T, W = 80, 20
+        idx = pd.RangeIndex(T)
+        factors = pd.DataFrame({"f1": rng.normal(size=T), "f2": rng.normal(size=T)}, index=idx)
+        targets = pd.DataFrame({"a": rng.normal(size=T)}, index=idx)
+        n_params = 3  # intercept + 2 factors
+        ols_result = RollingOLS(
+            window=W, min_periods=W, mode="joint", dtype="float64"
+        ).fit_transform(factors, targets)
+        ridge_result = RollingOLS(
+            window=W, min_periods=W, lambda_=0.5, mode="joint", dtype="float64"
+        ).fit_transform(factors, targets)
+        ols_dof = ols_result.get_dof("f1").dropna()
+        ridge_dof = ridge_result.get_dof("f1").dropna()
+        shared = ols_dof.index.intersection(ridge_dof.index)
+        # OLS dof should equal n_eff - n_params
+        np.testing.assert_allclose(
+            ols_dof.loc[shared].values,
+            W - n_params,
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        # Ridge dof strictly larger
+        assert (ridge_dof.loc[shared].values > ols_dof.loc[shared].values).all()

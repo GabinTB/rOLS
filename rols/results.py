@@ -259,11 +259,14 @@ class RollingOLSResult:
     ) -> pd.DataFrame:
         """Residual degrees of freedom for the model containing ``factor``.
 
-        ``n_eff - p - fit_intercept``, where ``p`` is the number of slope
-        coefficients in the selected model (``len(controls) + 1`` in batched
-        mode, ``len(controls) + n_factors`` in joint mode) and ``n_eff`` is
-        the effective sample size (equals ``n_used`` under equal weighting;
-        smaller under EWMA). Derived lazily and cached per factor.
+        ``n_eff - df_eff``, where ``n_eff`` is the effective sample size
+        (equals ``n_used`` under equal weighting, smaller under EWMA) and
+        ``df_eff = tr[G (G + P)^{-1}]`` is the effective model degrees of
+        freedom.  For OLS (``lambda_ == 0``), ``df_eff`` equals the raw
+        parameter count (slopes + intercept) so this is identical to the
+        classical ``n_eff - p - fit_intercept``.  For Ridge, ``df_eff < p``
+        and the shrinkage is reflected in a larger residual dof.
+        Derived lazily and cached per factor.
         """
         return self._full_index(self._statistics_for(factor, assets).dof)
 
