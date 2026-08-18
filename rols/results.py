@@ -37,6 +37,7 @@ class RollingOLSResult:
     min_periods: int
     expanding: bool
     hac_lags: int | None
+    mode: str = "batched"
     cache_size: int = 1
     estimated_positions: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.intp))
 

@@ -23,7 +23,9 @@ Set hac_lags on the constructor to enable this.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -124,6 +126,30 @@ def _ewma_weights(halflife: int, window: int) -> np.ndarray:
     alpha = 1 - np.exp(-np.log(2) / halflife)
     w = (1 - alpha) ** np.arange(window - 1, -1, -1)
     return w / w.sum()
+
+
+def _warn_correlated_factors(factors: pd.DataFrame, threshold: float = 0.3) -> None:
+    """Warn once when batched-mode factors have high pairwise |correlation|.
+
+    Correlation is computed on the full sample as a usage hint — it is not
+    per-window and does not affect estimation.
+    """
+    corr = factors.corr()
+    cols = factors.columns.tolist()
+    n_pairs = sum(
+        1
+        for i in range(len(cols))
+        for j in range(i + 1, len(cols))
+        if abs(corr.iloc[i, j]) > threshold
+    )
+    if n_pairs > 0:
+        warnings.warn(
+            f"{n_pairs} factor pair(s) have |correlation| > {threshold} in batched mode. "
+            "Betas are marginal given controls and do not control for the other factors. "
+            "Use mode='joint' for a multivariate model.",
+            UserWarning,
+            stacklevel=4,
+        )
 
 
 class RollingOLS:
@@ -249,7 +275,11 @@ class RollingOLS:
         cond_warn_threshold: float = 1e10,
         cache_size: int = 1,
         estimate_every: int | str = 1,
+        mode: Literal["batched", "joint"] = "batched",
+        warn_correlated_factors: bool = True,
     ) -> None:
+        if mode not in ("batched", "joint"):
+            raise ValueError(f"mode must be 'batched' or 'joint', got {mode!r}")
         if ewma_halflife is not None and expanding:
             raise ValueError(
                 "ewma_halflife cannot be combined with expanding=True: expanding "
@@ -294,6 +324,8 @@ class RollingOLS:
         self.cond_warn_threshold = cond_warn_threshold
         self.cache_size = cache_size
         self.estimate_every = estimate_every
+        self.mode = mode
+        self.warn_correlated_factors = warn_correlated_factors
 
         self._is_fitted = False
         self._factor_cols: list[str] = []
@@ -696,6 +728,7 @@ class RollingOLS:
         cond_warn_threshold = self.cond_warn_threshold
         asset_chunk_size = self.asset_chunk_size
         n_controls = len(self._control_cols)
+        n_factors = len(self._factor_cols)
         asset_positions = {asset: position for position, asset in enumerate(asset_cols)}
         factor_penalty = self._penalty_matrix(n_controls, n_factors=1)
         controls_penalty = self._penalty_matrix(n_controls, n_factors=0)
@@ -753,8 +786,13 @@ class RollingOLS:
             parts = [] if controls_snapshot is None else [controls_snapshot]
             return pd.concat([*parts, factors_snapshot[[factor]]], axis=1)
 
+        # Warn once when batched mode is used with materially correlated factors.
+        if self.mode == "batched" and self.warn_correlated_factors and n_factors > 1:
+            _warn_correlated_factors(factors_snapshot)
+
+        # FWL shortcut applies only in batched mode (lambda_==0).
         fwl_fit: BatchedFitResult | None = None
-        if self.lambda_ == 0:
+        if self.mode == "batched" and self.lambda_ == 0:
             fwl_fit = rolling_fwl_solve(
                 y=assets,
                 factors=factors_snapshot,
@@ -771,6 +809,16 @@ class RollingOLS:
                 endpoint_positions=solver_endpoint_positions,
             )
 
+        # Joint mode: one solve with all factors together.
+        joint_all_design: pd.DataFrame | None = None
+        joint_all_penalty: np.ndarray | None = None
+        joint_all_fit: JointFitResult | None = None
+        if self.mode == "joint":
+            _parts: list[pd.DataFrame] = [] if controls_snapshot is None else [controls_snapshot]
+            joint_all_design = pd.concat([*_parts, factors_snapshot], axis=1)
+            joint_all_penalty = self._penalty_matrix(n_controls, n_factors)
+            joint_all_fit = self._solve_targets(assets, joint_all_design, joint_all_penalty)
+
         result = RollingOLSResult(
             factor_cols=self._factor_cols,
             asset_cols=asset_cols,
@@ -783,11 +831,17 @@ class RollingOLS:
             cache_size=self.cache_size,
             estimated_positions=estimated_positions,
         )
-        result._path = "fwl" if self.lambda_ == 0 else "joint"
+        result._path = "fwl" if (self.mode == "batched" and self.lambda_ == 0) else "joint"
+        result.mode = self.mode
 
         direct_control_betas: dict[str, dict[str, pd.DataFrame]] = {}
         for factor_position, fac in enumerate(self._factor_cols):
-            if fwl_fit is None:
+            if joint_all_fit is not None:
+                # Joint mode: extract per-factor coefficient from the shared fit.
+                beta_values = joint_all_fit.coef[:, n_controls + factor_position, :]
+                intercept_values = joint_all_fit.intercept
+                n_used_values = joint_all_fit.n_used
+            elif fwl_fit is None:
                 fit = self._solve_targets(
                     assets,
                     factor_design(fac),
@@ -818,7 +872,10 @@ class RollingOLS:
                 )
             result._factor_values[fac] = factors_snapshot[fac]
             if return_control_betas and controls_snapshot is not None:
-                if fwl_fit is None:
+                if joint_all_fit is not None:
+                    # Controls are the first n_controls columns of the shared fit.
+                    control_coef = joint_all_fit.coef
+                elif fwl_fit is None:
                     control_coef = fit.coef
                 else:
                     assert fwl_fit.nuisance_coef is not None
@@ -864,7 +921,73 @@ class RollingOLS:
                 n_controls,
             )
 
-        if fwl_fit is not None:
+        if joint_all_fit is not None:
+            # --- Joint mode statistics ---
+            _joint_ssr = joint_all_fit.ssr
+            _joint_sst = joint_all_fit.sst
+            _joint_n_eff = joint_all_fit.n_eff
+            _joint_n_used = joint_all_fit.n_used
+            _factor_cols_snapshot = list(self._factor_cols)
+            # dof accounts for all K factors: pass (n_controls + K - 1) so that
+            # _finalize_statistics computes residual_dof = n_eff - (n_controls+K) - fit_intercept.
+            _n_controls_for_dof = n_controls + n_factors - 1
+            # Complete-case mask for all factors (restricts the reduced model to
+            # the same rows used by the full joint model).
+            _joint_regressor_mask = factors_snapshot.notna().all(axis=1)
+
+            def derive_joint_mode_statistics(
+                factor: str,
+                selected_assets: Sequence[str] | None,
+            ) -> FactorStatistics:
+                if selected_assets is None:
+                    full_ssr = _joint_ssr
+                    sst = _joint_sst
+                    n_eff = _joint_n_eff
+                    n_used = _joint_n_used
+                else:
+                    sel = [asset_positions[a] for a in selected_assets]
+                    full_ssr = _joint_ssr[:, sel]
+                    sst = _joint_sst[:, sel]
+                    n_eff = _joint_n_eff[:, sel]
+                    n_used = _joint_n_used[:, sel]
+
+                # Reduced model for partial R²: all factors except this one,
+                # restricted to the full model's complete-case rows so the two
+                # R² values are comparable.
+                other_factors = [f for f in _factor_cols_snapshot if f != factor]
+                if not other_factors and controls_snapshot is None:
+                    reduced_ssr = sst
+                else:
+                    _r_parts: list[pd.DataFrame] = (
+                        [] if controls_snapshot is None else [controls_snapshot]
+                    )
+                    if other_factors:
+                        _r_parts.append(factors_snapshot[other_factors])
+                    reduced_design = pd.concat(_r_parts, axis=1)
+                    reduced_penalty = self._penalty_matrix(n_controls, len(other_factors))
+                    _targets = selected_targets(selected_assets)
+                    reduced_fit = solve_snapshot(
+                        _targets.where(_joint_regressor_mask, axis=0),
+                        reduced_design,
+                        reduced_penalty,
+                    )
+                    if selected_assets is None:
+                        reduced_ssr = reduced_fit.ssr
+                    else:
+                        reduced_ssr = reduced_fit.ssr[:, sel]
+
+                return self._statistics_from_arrays(
+                    full_ssr,
+                    sst,
+                    reduced_ssr,
+                    n_eff,
+                    n_used,
+                    stored_targets(selected_assets),
+                    _n_controls_for_dof,
+                )
+
+            result._statistics_loader = derive_joint_mode_statistics
+        elif fwl_fit is not None:
             result._sufficient_statistics = fwl_fit.sufficient_statistics
             factor_positions = {
                 factor: position for position, factor in enumerate(self._factor_cols)
@@ -898,7 +1021,12 @@ class RollingOLS:
             selected_assets: Sequence[str] | None,
         ) -> pd.DataFrame:
             targets = selected_targets(selected_assets)
-            if fwl_fit is not None:
+            if joint_all_fit is not None:
+                # Joint mode: all factors share one model; residuals are the same
+                # regardless of which factor is queried.
+                fit = solve_snapshot(targets, joint_all_design, joint_all_penalty)
+                residual_values = fit.resid_endpoint
+            elif fwl_fit is not None:
                 factor_fit = rolling_fwl_solve(
                     y=targets,
                     factors=factors_snapshot[[factor]],
@@ -929,6 +1057,33 @@ class RollingOLS:
             if hac_lags is None:
                 raise RuntimeError("HAC standard errors require hac_lags to be set.")
             targets = selected_targets(selected_assets)
+            if joint_all_fit is not None:
+                # rolling_hac_se extracts the SE for the last design column, so
+                # reorder to place the requested factor last.  All factors share
+                # the same lambda_, so reordering does not affect the penalty.
+                other_factors = [f for f in self._factor_cols if f != factor]
+                _hac_parts: list[pd.DataFrame] = (
+                    [] if controls_snapshot is None else [controls_snapshot]
+                )
+                if other_factors:
+                    _hac_parts.append(factors_snapshot[other_factors])
+                _hac_parts.append(factors_snapshot[[factor]])
+                fac_last_design = pd.concat(_hac_parts, axis=1)
+                hac_penalty = self._penalty_matrix(n_controls, n_factors)
+                return rolling_hac_se(
+                    y=targets,
+                    X=fac_last_design,
+                    window=window,
+                    min_periods=min_periods,
+                    expanding=expanding,
+                    n_lags=hac_lags,
+                    fit_intercept=fit_intercept,
+                    penalty=hac_penalty,
+                    weights=weights_snapshot,
+                    denom_tol=denom_tol,
+                    warn_invalid=warn_singular,
+                    endpoint_positions=solver_endpoint_positions,
+                )
             return rolling_hac_se(
                 y=targets,
                 X=factor_design(factor),

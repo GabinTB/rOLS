@@ -1,5 +1,6 @@
 """Tests for the RollingOLS model class."""
 
+import warnings
 from unittest.mock import patch
 
 import numpy as np
@@ -2132,3 +2133,248 @@ class TestEstimationCadence:
     def test_invalid_cadence_names_value(self, value):
         with pytest.raises(ValueError, match=repr(value)):
             RollingOLS(estimate_every=value)
+
+
+class TestRollingOLSBatchedVsJoint:
+    """Tests for mode='batched' vs mode='joint' multi-factor estimation."""
+
+    # Shared panel: 3 factors, 2 targets, 120 observations.
+    @staticmethod
+    def _panel(seed: int = 7, T: int = 120, W: int = 40):
+        rng = np.random.default_rng(seed)
+        idx = pd.RangeIndex(T)
+        c = rng.standard_normal(T)
+        # Three correlated factors (ρ ≈ 0.6 between each pair).
+        f1 = 0.8 * c + rng.standard_normal(T) * 0.6
+        f2 = -0.6 * c + rng.standard_normal(T) * 0.8
+        f3 = 0.4 * c + rng.standard_normal(T) * 0.9
+        factors = pd.DataFrame({"f1": f1, "f2": f2, "f3": f3}, index=idx)
+        controls = pd.DataFrame({"c": c}, index=idx)
+        y = 0.5 * f1 - 0.3 * f2 + 0.2 * f3 + 0.4 * c + rng.standard_normal(T) * 0.5
+        y2 = rng.standard_normal(T)
+        assets = pd.DataFrame({"a1": y, "a2": y2}, index=idx)
+        return factors, controls, assets, W
+
+    def test_invalid_mode_raises(self):
+        with pytest.raises(ValueError, match="mode"):
+            RollingOLS(window=20, mode="invalid")
+
+    def test_mode_stored_on_result_batched(self):
+        factors, controls, assets, W = self._panel()
+        result = RollingOLS(window=W, mode="batched").fit_transform(factors, assets)
+        assert result.mode == "batched"
+
+    def test_mode_stored_on_result_joint(self):
+        factors, controls, assets, W = self._panel()
+        result = RollingOLS(window=W, mode="joint").fit_transform(factors, assets)
+        assert result.mode == "joint"
+
+    def test_single_factor_batched_equals_joint(self):
+        """With one factor, batched and joint must produce identical betas."""
+        factors, controls, assets, W = self._panel()
+        f_single = factors[["f1"]]
+        r_batched = RollingOLS(window=W, mode="batched").fit_transform(f_single, assets)
+        r_joint = RollingOLS(window=W, mode="joint").fit_transform(f_single, assets)
+        np.testing.assert_allclose(
+            r_batched.get_beta("f1").dropna().values,
+            r_joint.get_beta("f1").dropna().values,
+            rtol=1e-5,
+        )
+
+    def test_correlated_factors_batched_joint_differ(self):
+        """Batched and joint betas diverge when factors are correlated."""
+        factors, controls, assets, W = self._panel()
+        r_batched = RollingOLS(window=W, mode="batched").fit_transform(factors, assets)
+        r_joint = RollingOLS(window=W, mode="joint").fit_transform(factors, assets)
+        b = r_batched.get_beta("f1").dropna().values
+        j = r_joint.get_beta("f1").dropna().values
+        assert np.mean(np.abs(b - j)) > 0.05, "Correlated factors should yield different betas"
+
+    def test_orthogonal_factors_batched_equals_joint(self):
+        """With factors orthogonal within the window, batched == joint exactly.
+
+        The identity holds in OLS (lambda_=0) with fit_intercept=False when the
+        factor columns are mutually orthogonal in the estimation window.  We
+        construct a single window (T == W) from a QR decomposition so the
+        orthogonality is exact on the only estimate produced.
+        """
+        rng = np.random.default_rng(42)
+        W = 40
+        idx = pd.RangeIndex(W)
+        raw = rng.standard_normal((W, 3))
+        Q, _ = np.linalg.qr(raw)  # columns are orthonormal on the full window
+        factors = pd.DataFrame(Q, index=idx, columns=["f1", "f2", "f3"])
+        assets = pd.DataFrame(rng.standard_normal((W, 2)), index=idx, columns=["a1", "a2"])
+        # No intercept, float64: the orthogonality is exact, so batched == joint.
+        r_batched = RollingOLS(
+            window=W, min_periods=W, mode="batched", fit_intercept=False, dtype="float64"
+        ).fit_transform(factors, assets)
+        r_joint = RollingOLS(
+            window=W, min_periods=W, mode="joint", fit_intercept=False, dtype="float64"
+        ).fit_transform(factors, assets)
+        for fac in ["f1", "f2", "f3"]:
+            b = r_batched.get_beta(fac).dropna().values
+            j = r_joint.get_beta(fac).dropna().values
+            np.testing.assert_allclose(b, j, rtol=1e-8, atol=1e-10)
+
+    def test_joint_mode_matches_oracle(self):
+        """Joint mode betas match the scalar oracle for every factor and target."""
+        factors, controls, assets, W = self._panel()
+        result = RollingOLS(window=W, mode="joint", fit_intercept=True).fit_transform(
+            factors, assets
+        )
+        oracle = oracle_rolling(
+            assets,
+            factors,
+            controls=None,
+            window=W,
+            min_periods=W,
+            expanding=False,
+            fit_intercept=True,
+            mode="joint",
+        )
+        for fac in factors.columns:
+            got = result.get_beta(fac).dropna()
+            expected = oracle["beta"][fac].dropna()
+            np.testing.assert_allclose(
+                got.values, expected.values, rtol=1e-3, atol=1e-5, err_msg=f"factor={fac}"
+            )
+
+    def test_batched_mode_matches_oracle(self):
+        """Batched mode betas match the scalar oracle (existing behaviour)."""
+        factors, controls, assets, W = self._panel()
+        # Use lambda_>0 to bypass FWL so we're on the batched joint-per-factor path.
+        result = RollingOLS(
+            window=W, mode="batched", lambda_=0.01, fit_intercept=True
+        ).fit_transform(factors, assets)
+        oracle = oracle_rolling(
+            assets,
+            factors,
+            controls=None,
+            window=W,
+            min_periods=W,
+            expanding=False,
+            fit_intercept=True,
+            lambda_=0.01,
+            mode="batched",
+        )
+        for fac in factors.columns:
+            got = result.get_beta(fac).dropna()
+            expected = oracle["beta"][fac].dropna()
+            np.testing.assert_allclose(
+                got.values, expected.values, rtol=1e-3, atol=1e-5, err_msg=f"factor={fac}"
+            )
+
+    def test_joint_mode_with_controls_matches_direct_numpy(self):
+        """Joint mode + controls matches a direct numpy window solve."""
+        factors, controls, assets, W = self._panel()
+        ols = RollingOLS(window=W, mode="joint", fit_intercept=True)
+        result = ols.fit_transform(factors, assets, controls=controls)
+
+        # Manual solve on the last full window.
+        T = len(assets)
+        y_win = assets["a1"].iloc[T - W :].values.astype(np.float64)
+        c_win = controls["c"].iloc[T - W :].values.astype(np.float64)
+        f1_win = factors["f1"].iloc[T - W :].values.astype(np.float64)
+        f2_win = factors["f2"].iloc[T - W :].values.astype(np.float64)
+        f3_win = factors["f3"].iloc[T - W :].values.astype(np.float64)
+        X = np.column_stack([np.ones(W), c_win, f1_win, f2_win, f3_win])
+        coef_np = np.linalg.lstsq(X, y_win, rcond=None)[0]
+
+        got_f1 = result.get_beta("f1")["a1"].dropna().iloc[-1]
+        got_f2 = result.get_beta("f2")["a1"].dropna().iloc[-1]
+        got_f3 = result.get_beta("f3")["a1"].dropna().iloc[-1]
+
+        np.testing.assert_allclose(got_f1, coef_np[2], rtol=1e-3, atol=1e-5)
+        np.testing.assert_allclose(got_f2, coef_np[3], rtol=1e-3, atol=1e-5)
+        np.testing.assert_allclose(got_f3, coef_np[4], rtol=1e-3, atol=1e-5)
+
+    def test_joint_mode_control_betas_shared_across_factors(self):
+        """In joint mode, control betas are the same regardless of which factor is named."""
+        factors, controls, assets, W = self._panel()
+        result = RollingOLS(window=W, mode="joint").fit_transform(
+            factors, assets, controls=controls, return_control_betas=True
+        )
+        cb_f1 = result.get_control_beta("f1", "c").dropna()
+        cb_f2 = result.get_control_beta("f2", "c").dropna()
+        cb_f3 = result.get_control_beta("f3", "c").dropna()
+        np.testing.assert_allclose(cb_f1.values, cb_f2.values, rtol=1e-10)
+        np.testing.assert_allclose(cb_f1.values, cb_f3.values, rtol=1e-10)
+
+    def test_batched_mode_control_betas_differ_when_correlated(self):
+        """In batched mode, control betas vary across factors when factor and control correlate."""
+        factors, controls, assets, W = self._panel()
+        result = RollingOLS(window=W, mode="batched").fit_transform(
+            factors, assets, controls=controls, return_control_betas=True
+        )
+        cb_f1 = result.get_control_beta("f1", "c").dropna()
+        cb_f2 = result.get_control_beta("f2", "c").dropna()
+        # f1 and f2 are both correlated with c, so their control betas should differ.
+        assert np.mean(np.abs(cb_f1.values - cb_f2.values)) > 1e-6
+
+    def test_correlation_warning_fires_for_correlated_batched(self):
+        """UserWarning fires once when batched mode has correlated factors."""
+        factors, controls, assets, W = self._panel()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            RollingOLS(window=W, mode="batched").fit_transform(factors, assets)
+        user_warns = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warns) == 1
+        assert "correlation" in str(user_warns[0].message).lower()
+        assert "joint" in str(user_warns[0].message).lower()
+
+    def test_correlation_warning_suppressible(self):
+        """warn_correlated_factors=False silences the warning."""
+        factors, controls, assets, W = self._panel()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            RollingOLS(window=W, mode="batched", warn_correlated_factors=False).fit_transform(
+                factors, assets
+            )
+        user_warns = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warns) == 0
+
+    def test_no_correlation_warning_for_single_factor(self):
+        """No warning for a single factor (no pairs to compare)."""
+        factors, controls, assets, W = self._panel()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            RollingOLS(window=W, mode="batched").fit_transform(factors[["f1"]], assets)
+        user_warns = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warns) == 0
+
+    def test_no_correlation_warning_for_orthogonal_batched(self):
+        """No warning when factors are uncorrelated (|ρ| <= 0.3)."""
+        rng = np.random.default_rng(0)
+        T, W = 120, 40
+        idx = pd.RangeIndex(T)
+        raw = rng.standard_normal((T, 3))
+        Q, _ = np.linalg.qr(raw)
+        factors = pd.DataFrame(Q, index=idx, columns=["f1", "f2", "f3"])
+        assets = pd.DataFrame(rng.standard_normal((T, 1)), index=idx, columns=["a1"])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            RollingOLS(window=W, mode="batched").fit_transform(factors, assets)
+        user_warns = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warns) == 0
+
+    def test_joint_mode_no_correlation_warning(self):
+        """No correlation warning in joint mode (no need — all factors are in the model)."""
+        factors, controls, assets, W = self._panel()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            RollingOLS(window=W, mode="joint").fit_transform(factors, assets)
+        user_warns = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warns) == 0
+
+    def test_joint_r2_and_partial_r2_are_finite(self):
+        """Basic sanity: R² and partial R² are finite for joint mode."""
+        factors, controls, assets, W = self._panel()
+        result = RollingOLS(window=W, mode="joint").fit_transform(factors, assets)
+        for fac in factors.columns:
+            r2 = result.get_r2(fac).dropna()
+            pr2 = result.get_partial_r2(fac).dropna()
+            assert np.isfinite(r2.values).all()
+            assert np.isfinite(pr2.values).all()
+            assert (r2.values >= 0).all()
+            assert (r2.values <= 1.0 + 1e-6).all()
