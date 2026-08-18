@@ -84,6 +84,139 @@ class TestRollingOLSInit:
         with pytest.raises(ValueError, match="non-negative"):
             RollingOLS(lambda_=-0.1)
 
+    # --- Constructor validation added in Task 20 (F17, F18, F19) ---
+
+    @pytest.mark.parametrize("window", [0, -1, -100])
+    def test_invalid_window_raises(self, window):
+        with pytest.raises(ValueError, match=repr(window)):
+            RollingOLS(window=window)
+
+    @pytest.mark.parametrize("min_periods", [0, -1, -5])
+    def test_invalid_min_periods_raises(self, min_periods):
+        with pytest.raises(ValueError, match=repr(min_periods)):
+            RollingOLS(window=20, min_periods=min_periods)
+
+    def test_min_periods_exceeds_window_rolling_raises(self):
+        with pytest.raises(ValueError, match="exceeds window"):
+            RollingOLS(window=10, min_periods=11)
+
+    def test_min_periods_exceeds_window_expanding_ok(self):
+        """min_periods > window is fine in expanding mode."""
+        ols = RollingOLS(window=10, min_periods=50, expanding=True)
+        assert ols.min_periods == 50
+
+    @pytest.mark.parametrize("ewma_halflife", [0, -1, -10])
+    def test_invalid_ewma_halflife_raises(self, ewma_halflife):
+        with pytest.raises(ValueError, match=repr(ewma_halflife)):
+            RollingOLS(ewma_halflife=ewma_halflife)
+
+    @pytest.mark.parametrize("hac_lags", [-1, -5])
+    def test_invalid_hac_lags_raises(self, hac_lags):
+        with pytest.raises(ValueError, match=repr(hac_lags)):
+            RollingOLS(hac_lags=hac_lags)
+
+    def test_valid_hac_lags_zero(self):
+        """hac_lags=0 is accepted (Eicker-White sandwich)."""
+        ols = RollingOLS(window=20, hac_lags=0)
+        assert ols.hac_lags == 0
+
+    def test_valid_window_one(self):
+        """window=1 is accepted."""
+        ols = RollingOLS(window=1)
+        assert ols.window == 1
+
+    def test_valid_min_periods_equals_window(self):
+        """min_periods == window is accepted."""
+        ols = RollingOLS(window=20, min_periods=20)
+        assert ols.min_periods == 20
+
+    def test_valid_lambda_zero(self):
+        """lambda_=0 is accepted."""
+        ols = RollingOLS(lambda_=0.0)
+        assert ols.lambda_ == 0.0
+
+
+class TestNaNContractAndBoundaryBug:
+    """Boundary guard and NaN-contract consistency (F17, F18)."""
+
+    def test_regressor_nan_t_less_than_window_no_crash(self):
+        """Regressor NaN with T < window and min_periods < window must not crash."""
+        rng = np.random.default_rng(0)
+        T, W, mp = 5, 10, 3
+        factors = pd.DataFrame(rng.standard_normal((T, 1)), columns=["f1"])
+        factors.iloc[2] = np.nan  # inject X NaN → triggers per-column fallback
+        assets = pd.DataFrame(rng.standard_normal((T, 1)), columns=["a1"])
+        # Must not raise IndexError.
+        result = RollingOLS(window=W, min_periods=mp).fit_transform(factors, assets)
+        beta = result.get_beta("f1")
+        # Can only produce output at t >= min_periods - 1; first two rows are NaN.
+        assert beta.iloc[: mp - 1].isna().all().all()
+
+    def test_t_equals_window_produces_one_estimate(self):
+        """T == window → exactly one estimate at the last row."""
+        rng = np.random.default_rng(1)
+        W = 20
+        factors = pd.DataFrame(rng.standard_normal((W, 1)), columns=["f1"])
+        assets = pd.DataFrame(rng.standard_normal((W, 1)), columns=["a1"])
+        result = RollingOLS(window=W, min_periods=W).fit_transform(factors, assets)
+        beta = result.get_beta("f1")
+        assert beta.iloc[:-1].isna().all().all()
+        assert np.isfinite(beta.iloc[-1].values).all()
+
+    def test_t_less_than_window_no_estimate(self):
+        """T < window with min_periods == window → all-NaN output."""
+        rng = np.random.default_rng(2)
+        T, W = 8, 20
+        factors = pd.DataFrame(rng.standard_normal((T, 1)), columns=["f1"])
+        assets = pd.DataFrame(rng.standard_normal((T, 1)), columns=["a1"])
+        result = RollingOLS(window=W, min_periods=W).fit_transform(factors, assets)
+        assert result.get_beta("f1").isna().all().all()
+
+    def test_t_equals_min_periods_single_estimate(self):
+        """T == min_periods → exactly one estimate (at the last row, first full window)."""
+        rng = np.random.default_rng(3)
+        mp, W = 15, 30
+        factors = pd.DataFrame(rng.standard_normal((mp, 1)), columns=["f1"])
+        assets = pd.DataFrame(rng.standard_normal((mp, 1)), columns=["a1"])
+        result = RollingOLS(window=W, min_periods=mp).fit_transform(factors, assets)
+        beta = result.get_beta("f1")
+        assert beta.iloc[:-1].isna().all().all()
+        assert np.isfinite(beta.iloc[-1].values).all()
+
+    def test_nan_contract_consistency_x_vs_y(self):
+        """Regressor NaN and target NaN in the same position yield the same emit decision."""
+        rng = np.random.default_rng(42)
+        T, W, mp = 30, 20, 10
+        f = rng.standard_normal(T)
+        a = rng.standard_normal(T)
+
+        # Case 1: factor NaN at position 15
+        f_nan = f.copy()
+        f_nan[15] = np.nan
+        factors_xnan = pd.DataFrame({"f1": f_nan})
+        assets_full = pd.DataFrame({"a1": a})
+
+        # Case 2: asset NaN at position 15
+        a_nan = a.copy()
+        a_nan[15] = np.nan
+        factors_full = pd.DataFrame({"f1": f})
+        assets_ynan = pd.DataFrame({"a1": a_nan})
+
+        r_xnan = RollingOLS(window=W, min_periods=mp).fit_transform(factors_xnan, assets_full)
+        r_ynan = RollingOLS(window=W, min_periods=mp).fit_transform(factors_full, assets_ynan)
+
+        # The NaN *pattern* (which endpoints are emitted) should match.
+        beta_xnan = r_xnan.get_beta("f1")
+        beta_ynan = r_ynan.get_beta("f1")
+        finite_xnan = np.isfinite(beta_xnan.values)
+        finite_ynan = np.isfinite(beta_ynan.values)
+        # Both should have the same endpoints as NaN (missing one row from the window)
+        np.testing.assert_array_equal(
+            finite_xnan,
+            finite_ynan,
+            err_msg="Factor NaN and target NaN at the same row should yield identical emit decisions",
+        )
+
 
 class TestRollingOLSFit:
     """Tests for the fit() method."""

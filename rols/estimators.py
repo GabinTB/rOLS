@@ -1143,9 +1143,10 @@ def _residualize_single(
         except np.linalg.LinAlgError:
             n_singular += 1
 
-    # Handle min_periods < window — early windows
+    # Handle min_periods < window — early windows.
+    # Cap at T so we never index past the end of the arrays when T < window.
     if min_periods < window:
-        for t in range(min_periods - 1, window - 1):
+        for t in range(min_periods - 1, min(window - 1, T)):
             if np.isnan(y_col[t]):
                 continue
             y_w = y_col[: t + 1]
@@ -1206,10 +1207,12 @@ def rolling_residualize(
 
     NaN handling
     ------------
-    NaNs in X invalidate the entire window (no regressor → no regression).
-    NaNs in y are handled per-column: rows with NaN are dropped within the
-    window before solving, and min_periods applies to the remaining clean rows.
-    This means NaNs in one target column never contaminate other columns.
+    A row is used iff the intercept design, all X columns, and the target are
+    simultaneously observed (complete case within window). A result is emitted
+    at endpoint ``t`` iff at least ``min_periods`` such rows exist in the window.
+    NaNs in X invalidate that row for every target column; NaNs in y invalidate
+    the row only for the column where the NaN appears — one target's missing
+    observations never contaminate another target.
 
     Three rolling paths are selected automatically:
 
@@ -1395,8 +1398,9 @@ def rolling_residualize(
 
         # Early windows (min_periods < window) use variable-size expanding
         # windows — handled per asset exactly as in _residualize_single.
+        # Cap at T so we never index past the end of the arrays when T < window.
         if min_periods < window:
-            for t in range(min_periods - 1, window - 1):
+            for t in range(min_periods - 1, min(window - 1, T)):
                 for j in range(N):
                     if np.isnan(y_np[t, j]):
                         continue
@@ -1422,7 +1426,7 @@ def rolling_residualize(
 
     else:
         # NaN-robust per-column fallback: NaNs present in X.
-        # NaNs in X invalidate the row for all columns.
+        # NaNs in any X column invalidate that row for all target columns.
         # NaNs in y are handled per column — one column's NaNs don't affect others.
         x_row_valid = ~np.isnan(X_np).any(axis=1)  # (T,) — shared across columns
 

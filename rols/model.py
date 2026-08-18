@@ -280,14 +280,36 @@ class RollingOLS:
     ) -> None:
         if mode not in ("batched", "joint"):
             raise ValueError(f"mode must be 'batched' or 'joint', got {mode!r}")
+        if not isinstance(window, int) or isinstance(window, bool) or window <= 0:
+            raise ValueError(f"window must be a positive integer, got {window!r}")
+        if min_periods is not None and (
+            not isinstance(min_periods, int) or isinstance(min_periods, bool) or min_periods <= 0
+        ):
+            raise ValueError(f"min_periods must be a positive integer, got {min_periods!r}")
+        _resolved_min_periods = min_periods if min_periods is not None else window
+        if not expanding and _resolved_min_periods > window:
+            raise ValueError(
+                f"min_periods={_resolved_min_periods!r} exceeds window={window!r} in rolling mode; "
+                "use expanding=True or set min_periods <= window"
+            )
         if ewma_halflife is not None and expanding:
             raise ValueError(
                 "ewma_halflife cannot be combined with expanding=True: expanding "
                 "windows have variable length, so the EWMA weight vector cannot "
                 "be precomputed."
             )
+        if ewma_halflife is not None and (
+            not isinstance(ewma_halflife, int)
+            or isinstance(ewma_halflife, bool)
+            or ewma_halflife <= 0
+        ):
+            raise ValueError(f"ewma_halflife must be a positive integer, got {ewma_halflife!r}")
         if lambda_ < 0:
-            raise ValueError("lambda_ must be non-negative")
+            raise ValueError(f"lambda_ must be non-negative, got {lambda_!r}")
+        if hac_lags is not None and (
+            not isinstance(hac_lags, int) or isinstance(hac_lags, bool) or hac_lags < 0
+        ):
+            raise ValueError(f"hac_lags must be a non-negative integer, got {hac_lags!r}")
         if not np.isfinite(cond_warn_threshold) or cond_warn_threshold <= 0:
             raise ValueError("cond_warn_threshold must be finite and positive")
         if not isinstance(cache_size, int) or isinstance(cache_size, bool):
