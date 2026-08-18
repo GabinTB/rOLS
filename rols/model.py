@@ -145,8 +145,12 @@ class RollingOLS:
         Include an explicit intercept in every window fit. Defaults to True.
     lambda_ : float
         Ridge strength for the normalized weighted objective. Penalized
-        regressors are standardized within each complete-case window before
-        solving and returned in their original units. 0.0 gives OLS.
+        regressors are standardized to unit weighted variance within each
+        complete-case window before solving and rescaled back to original
+        units on return.  This means ``lambda_`` has the **same** effective
+        strength regardless of window length, EWMA half-life, or the number
+        of complete rows in a window — the gram diagonal is always 1 in the
+        solve coordinates.  ``0.0`` gives OLS.
     penalize_controls : bool
         Penalize controls along with factors when ``lambda_ > 0``. Defaults to
         True. Set to False to treat controls as unpenalized nuisance regressors.

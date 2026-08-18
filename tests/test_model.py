@@ -1652,6 +1652,168 @@ class TestRollingOLSEWMA:
         assert beta["a1"].iloc[10:15].isna().all()
         assert beta["a1"].notna().any()
 
+    def test_uniform_weights_reproduce_unweighted_ridge(self, monkeypatch):
+        """Injecting uniform EWMA weights reproduces equal-weight Ridge at lambda_ > 0.
+
+        This is the high-level analogue of the low-level rolling_joint_solve test
+        in TestRollingOLSRidge.  It exercises the full RollingOLS pipeline and
+        confirms that lambda_ has identical meaning regardless of the weight vector
+        when that vector is uniform.
+        """
+        rng = np.random.default_rng(31)
+        W = 20
+        T = 80
+        factors = pd.DataFrame(rng.normal(size=(T, 1)), columns=["f1"])
+        assets = pd.DataFrame(rng.normal(size=(T, 2)), columns=["a1", "a2"])
+
+        common = {"window": W, "lambda_": 0.3, "dtype": "float64"}
+        unweighted = RollingOLS(**common).fit_transform(factors, assets)
+        weighted_model = RollingOLS(**common)
+        # Replace _weights() so it returns np.ones(W) — normalized to sum=1 inside.
+        monkeypatch.setattr(weighted_model, "_weights", lambda: np.ones(W))
+        weighted = weighted_model.fit_transform(factors, assets)
+
+        np.testing.assert_allclose(
+            weighted.get_beta("f1"),
+            unweighted.get_beta("f1"),
+            atol=1e-12,
+            equal_nan=True,
+            err_msg="Uniform EWMA weights must reproduce equal-weight Ridge at lambda_ > 0",
+        )
+        np.testing.assert_allclose(
+            weighted.get_intercept("f1"),
+            unweighted.get_intercept("f1"),
+            atol=1e-12,
+            equal_nan=True,
+        )
+
+    def test_ridge_penalty_scale_invariant_to_window(self):
+        """lambda_ = 0.3 shrinks factor betas by a similar fraction at W = 20 and W = 60.
+
+        The standardised objective normalises regressors to unit weighted variance,
+        so the effective penalty does not grow with the window size.  Concretely,
+        the ratio (ridge_beta / ols_beta) should be within ±30 % between the two
+        windows when betas are averaged across many endpoints.
+        """
+        rng = np.random.default_rng(32)
+        T = 400
+        true_beta = 2.0
+        f = rng.normal(size=T)
+        # Strong signal so OLS betas cluster around true_beta.
+        y = true_beta * f + 0.3 * rng.normal(size=T)
+        factors = pd.DataFrame({"f": f})
+        assets = pd.DataFrame({"a": y})
+        lam = 0.3
+
+        shrinkage_ratios = {}
+        for W in [20, 60]:
+            ridge = (
+                RollingOLS(window=W, lambda_=lam, dtype="float64")
+                .fit_transform(factors, assets)
+                .get_beta("f")["a"]
+                .dropna()
+            )
+            ols = (
+                RollingOLS(window=W, dtype="float64")
+                .fit_transform(factors, assets)
+                .get_beta("f")["a"]
+                .dropna()
+            )
+            # Average ratio on windows where both are defined.
+            idx = ridge.index.intersection(ols.index)
+            shrinkage_ratios[W] = float((ridge[idx] / ols[idx]).mean())
+
+        ratio_20, ratio_60 = shrinkage_ratios[20], shrinkage_ratios[60]
+        assert ratio_20 == pytest.approx(ratio_60, rel=0.30), (
+            f"Shrinkage ratio should be window-invariant; got {ratio_20:.4f} at W=20 "
+            f"vs {ratio_60:.4f} at W=60"
+        )
+
+    def test_min_periods_parity_weighted_equals_unweighted(self):
+        """Weighted path emits at the same endpoints as unweighted when min_periods < window.
+
+        With NaN rows but n_complete >= min_periods, both modes should produce
+        a result; neither should spuriously emit NaN where the other does not.
+        """
+        rng = np.random.default_rng(33)
+        T, W, mp = 80, 20, 12
+        f = rng.normal(size=T)
+        a = rng.normal(size=T)
+        # Sparse structural NaNs so many windows have n_complete in [mp, W).
+        a[5:12] = np.nan
+        a[30:34] = np.nan
+        factors = pd.DataFrame({"f": f})
+        assets = pd.DataFrame({"a": a})
+
+        r_eq = RollingOLS(window=W, min_periods=mp, dtype="float64").fit_transform(factors, assets)
+        r_ew = RollingOLS(window=W, min_periods=mp, ewma_halflife=8, dtype="float64").fit_transform(
+            factors, assets
+        )
+
+        nan_eq = r_eq.get_beta("f")["a"].isna()
+        nan_ew = r_ew.get_beta("f")["a"].isna()
+        mismatch = (nan_eq != nan_ew).sum()
+        assert mismatch == 0, (
+            f"NaN pattern differs between weighted and unweighted at "
+            f"{mismatch} endpoints; EWMA path may wrongly drop an endpoint"
+        )
+
+    def test_hac_se_weighted_differs_from_equal_weight(self):
+        """EWMA weights are passed through to HAC sandwich; the SE differs from equal-weight.
+
+        This guards against silently computing an equal-weight SE when EWMA is
+        requested — an error that cannot be detected unless the two paths are
+        directly compared.
+        """
+        rng = np.random.default_rng(34)
+        T, W, hl, lags = 100, 30, 5, 3
+        # Autocorrelated residuals so HAC SE differs meaningfully from OLS SE.
+        f = np.cumsum(rng.normal(size=T)) * 0.1
+        y = 0.5 * f + np.cumsum(rng.normal(size=T)) * 0.05
+        factors = pd.DataFrame({"f": f})
+        assets = pd.DataFrame({"a": y})
+
+        r_eq = RollingOLS(window=W, hac_lags=lags, dtype="float64").fit_transform(factors, assets)
+        r_ew = RollingOLS(window=W, hac_lags=lags, ewma_halflife=hl, dtype="float64").fit_transform(
+            factors, assets
+        )
+
+        se_eq = r_eq.get_se("f")["a"].dropna()
+        se_ew = r_ew.get_se("f")["a"].dropna()
+        idx = se_eq.index.intersection(se_ew.index)
+        assert len(idx) > 0, "No common valid endpoints"
+        # Both must be finite and positive.
+        assert np.all(np.isfinite(se_eq[idx].values)), "Equal-weight SE has inf/nan"
+        assert np.all(np.isfinite(se_ew[idx].values)), "EWMA SE has inf/nan"
+        assert np.all(se_eq[idx].values > 0), "Equal-weight SE has non-positive values"
+        assert np.all(se_ew[idx].values > 0), "EWMA SE has non-positive values"
+        # The SEs must differ (EWMA weights are actually used in the sandwich).
+        mean_diff = (se_eq[idx] - se_ew[idx]).abs().mean()
+        assert mean_diff > 1e-6, (
+            f"EWMA and equal-weight HAC SEs are identical (mean diff {mean_diff:.2e}); "
+            "EWMA weights may not be reaching the HAC sandwich estimator"
+        )
+
+    def test_extreme_halflife_1_runs_without_blowup(self):
+        """ewma_halflife=1 places near-all weight on the last observation.
+
+        This is a stress test: the effective sample size is ≈ 1, so parameter
+        estimates will be noisy, but the code must not produce inf, raise, or
+        otherwise blow up.
+        """
+        rng = np.random.default_rng(35)
+        T, W = 60, 10
+        factors = pd.DataFrame(rng.normal(size=(T, 1)), columns=["f"])
+        assets = pd.DataFrame(rng.normal(size=(T, 1)), columns=["a"])
+
+        result = RollingOLS(window=W, ewma_halflife=1, dtype="float64").fit_transform(
+            factors, assets
+        )
+        beta = result.get_beta("f")["a"]
+        valid = beta.dropna()
+        assert len(valid) > 0, "No valid estimates for halflife=1"
+        assert np.all(np.isfinite(valid.values)), "halflife=1 produced inf values"
+
 
 class TestRollingOLSEdgeCases:
     """Tests for edge cases."""
