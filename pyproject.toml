@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rols"
-version = "0.2.1"
+version = "0.3.0"
 description = "Vectorized rolling and expanding regression for multi-target, multi-factor time series."
 readme = "README.md"
 license = "MIT"
@@ -16,7 +16,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
     "numpy>=1.24",

@@ -13,4 +13,5 @@ RollingOLSResult: result container with getters
 from .model import RollingOLS
 from .results import RollingOLSResult
 
-__all__ = ["RollingOLS", "RollingOLSResult"]
+__version__ = "0.3.0"
+__all__ = ["RollingOLS", "RollingOLSResult", "__version__"]
