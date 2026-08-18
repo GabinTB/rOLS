@@ -253,7 +253,37 @@ class RollingOLSResult:
         control: str,
         assets: Sequence[str] | None = None,
     ) -> pd.DataFrame:
-        """Joint rolling beta of a control requested during transform()."""
+        """Rolling coefficient of *control* from the joint model that includes *factor*.
+
+        In batched mode each factor defines a separate model::
+
+            y  ~  1  +  controls  +  factor
+
+        so the coefficient on *control* is the coefficient from the joint model
+        that also contains *factor*.  When *factor* and *control* are correlated,
+        this value **varies across factors** — it is not a property of the control
+        alone.  (When every factor is orthogonal to every control within each
+        window, the values coincide across factors, but that is the special case,
+        not the rule.)
+
+        The coefficient is read directly from the joint solve; the ``return_control_betas``
+        flag gates storage (a DataFrame per factor × control pair), not computation.
+
+        Parameters
+        ----------
+        factor:
+            Factor name; must be one of the columns passed to ``transform()``.
+        control:
+            Control name; must be one of the controls columns.
+        assets:
+            Optional subset of asset columns to return.
+
+        Returns
+        -------
+        pd.DataFrame
+            Shape ``(T, N_assets)``.  Rows before the first complete window
+            are ``NaN``.
+        """
         self._check_factor(factor)
         if not self._control_betas:
             raise RuntimeError(

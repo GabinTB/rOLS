@@ -548,6 +548,121 @@ class TestRollingOLSTransform:
         diff = (joint["a1"][mask] - univariate["a1"][mask]).abs()
         assert diff.mean() > 1e-3
 
+    def test_control_beta_differs_across_correlated_factors(self):
+        """When factors are correlated with the control, control betas vary by factor.
+
+        In batched mode each factor defines its own joint model, so the control's
+        coefficient is not a universal constant — it depends on which factor is
+        included.  This is the general rule; equality is the special case.
+        """
+        rng = np.random.default_rng(99)
+        T, W = 200, 40
+        c = rng.standard_normal(T)
+        # f1 and f2 are both strongly correlated with c (opposite signs)
+        f1 = 0.8 * c + 0.2 * rng.standard_normal(T)
+        f2 = -0.6 * c + 0.4 * rng.standard_normal(T)
+        factors = pd.DataFrame({"f1": f1, "f2": f2})
+        controls = pd.DataFrame({"c": c})
+        assets = pd.DataFrame({"a": rng.standard_normal(T)})
+
+        ols = RollingOLS(window=W, dtype="float64")
+        result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
+
+        cb_f1 = result.get_control_beta("f1", "c")["a"]
+        cb_f2 = result.get_control_beta("f2", "c")["a"]
+        valid = cb_f1.notna() & cb_f2.notna()
+        diff = (cb_f1[valid] - cb_f2[valid]).abs()
+        # With |ρ(f,c)| ≈ 0.8, the two control betas must differ meaningfully
+        assert diff.mean() > 0.05, (
+            "Control betas should vary across factors when factors are correlated "
+            f"with controls; mean absolute difference was {diff.mean():.6f}"
+        )
+
+    def test_control_beta_coincides_for_orthogonal_factors(self):
+        """Control betas are identical across factors when every factor is orthogonal
+        to every control within the window.
+
+        When f ⊥ c in the window, the FWL theorem implies γ(c|f) = γ(c alone).
+        With two such orthogonal factors both yield the same γ, so the values
+        coincide.  This is the special case that the old (incorrect) test
+        mistook for the general rule.
+        """
+        rng = np.random.default_rng(17)
+        W = 60  # use a single full window: T = W
+        c = rng.standard_normal(W)
+        f1_raw = rng.standard_normal(W)
+        f2_raw = rng.standard_normal(W)
+        # Orthogonalize f1 and f2 against [1, c] so they are exactly orthogonal
+        # to the control within the (only) window.  Use QR to avoid forming Z'Z.
+        Z = np.column_stack([np.ones(W), c])
+        Q, _ = np.linalg.qr(Z, mode="reduced")  # Q shape (W, 2)
+        f1 = f1_raw - Q @ (Q.T @ f1_raw)
+        f2 = f2_raw - Q @ (Q.T @ f2_raw)
+
+        idx = pd.RangeIndex(W)
+        factors = pd.DataFrame({"f1": f1, "f2": f2}, index=idx)
+        controls = pd.DataFrame({"c": c}, index=idx)
+        assets = pd.DataFrame({"a": rng.standard_normal(W)}, index=idx)
+
+        ols = RollingOLS(window=W, dtype="float64")
+        result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
+
+        cb_f1 = result.get_control_beta("f1", "c").iloc[-1, 0]
+        cb_f2 = result.get_control_beta("f2", "c").iloc[-1, 0]
+        np.testing.assert_allclose(
+            cb_f1,
+            cb_f2,
+            rtol=1e-10,
+            atol=1e-12,
+            err_msg=(
+                "Control betas should coincide across factors when every factor is "
+                f"orthogonal to the control; got {cb_f1:.6f} vs {cb_f2:.6f}"
+            ),
+        )
+
+    def test_control_beta_matches_manual_fwl(self):
+        """γ₁ from get_control_beta equals the hand-computed FWL coefficient.
+
+        By the FWL theorem, γ₁ in y ~ 1 + f + c₁ + c₂ equals the OLS
+        coefficient from regressing M_{[1,f,c₂]}y on M_{[1,f,c₂]}c₁, where
+        M_Z = I - Z(Z'Z)⁻¹Z' is the annihilator of Z.
+        """
+        rng = np.random.default_rng(7)
+        W = 80  # single window: T = W
+        c1 = rng.standard_normal(W)
+        c2 = rng.standard_normal(W)
+        f = rng.standard_normal(W)
+        # True model: y = 0.5f + 0.3c1 - 0.2c2 + noise
+        y = 0.5 * f + 0.3 * c1 - 0.2 * c2 + rng.standard_normal(W)
+
+        idx = pd.RangeIndex(W)
+        factors = pd.DataFrame({"f": f}, index=idx)
+        controls = pd.DataFrame({"c1": c1, "c2": c2}, index=idx)
+        assets = pd.DataFrame({"y": y}, index=idx)
+
+        ols = RollingOLS(window=W, dtype="float64")
+        result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
+
+        # Hand-compute FWL: residualize c1 and y on [1, f, c2].
+        # Use QR to avoid forming X'X (which squares the condition number).
+        X_other = np.column_stack([np.ones(W), f, c2])
+        Q, _ = np.linalg.qr(X_other, mode="reduced")  # Q shape (W, 3)
+        c1_perp = c1 - Q @ (Q.T @ c1)
+        y_perp = y - Q @ (Q.T @ y)
+        gamma1_fwl = (c1_perp @ y_perp) / (c1_perp @ c1_perp)
+
+        reported = result.get_control_beta("f", "c1").iloc[-1, 0]
+        np.testing.assert_allclose(
+            reported,
+            gamma1_fwl,
+            rtol=1e-10,
+            atol=1e-12,
+            err_msg=(
+                f"get_control_beta should equal the FWL coefficient; "
+                f"got {reported:.8f} vs {gamma1_fwl:.8f}"
+            ),
+        )
+
     def test_control_beta_default_raises(self):
         """Default return_control_betas=False: get_control_beta raises RuntimeError."""
         np.random.seed(42)
