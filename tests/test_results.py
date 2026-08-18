@@ -482,73 +482,47 @@ class TestRollingOLSResultControlBetas:
             result.get_control_beta("f1", "c1")
 
 
-class TestRollingOLSResultFactorMimickingReturns:
-    """Tests for get_factor_mimicking_returns() and get_all_factor_mimicking_returns()."""
+class TestFactorMimickingReturnsRemoved:
+    """Guard that the removed accessors cannot silently regress into the API."""
 
-    @pytest.fixture
-    def single_target_result(self):
-        """Cross-sectional setup: K factors, a single target column."""
-        np.random.seed(42)
-        T = 100
-        factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
-        target = pd.DataFrame(np.random.randn(T, 1), columns=["returns"])
+    def test_get_factor_mimicking_returns_absent(self):
+        """get_factor_mimicking_returns must not exist on RollingOLSResult."""
+        from rols.results import RollingOLSResult
 
-        ols = RollingOLS(window=20)
-        return ols.fit_transform(factors, target)
+        assert not hasattr(RollingOLSResult, "get_factor_mimicking_returns"), (
+            "get_factor_mimicking_returns was removed in v0.3.0 (F13). "
+            "Do not add it back without a proper cross-sectional specification."
+        )
 
-    @pytest.fixture
-    def multi_target_result(self):
-        """Time-series setup: multiple target columns."""
-        np.random.seed(42)
-        T = 100
-        factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
-        assets = pd.DataFrame(np.random.randn(T, 3), columns=["a1", "a2", "a3"])
+    def test_get_all_factor_mimicking_returns_absent(self):
+        """get_all_factor_mimicking_returns must not exist on RollingOLSResult."""
+        from rols.results import RollingOLSResult
 
-        ols = RollingOLS(window=20)
-        return ols.fit_transform(factors, assets)
+        assert not hasattr(RollingOLSResult, "get_all_factor_mimicking_returns"), (
+            "get_all_factor_mimicking_returns was removed in v0.3.0 (F13). "
+            "Do not add it back without a proper cross-sectional specification."
+        )
 
-    def test_returns_series_with_name_and_index(self, single_target_result):
-        """get_factor_mimicking_returns returns a named Series indexed by date."""
-        result = single_target_result
-        g = result.get_factor_mimicking_returns("f1")
+    def test_readme_has_no_fama_macbeth_claim(self):
+        """README must not mention Fama-MacBeth or cross-sectional estimation."""
+        import pathlib
 
-        assert isinstance(g, pd.Series)
-        assert g.name == "f1"
-        assert len(g) == 100
-        pd.testing.assert_index_equal(g.index, result.index)
+        readme = pathlib.Path(__file__).parent.parent / "README.md"
+        text = readme.read_text(encoding="utf-8").lower()
+        forbidden = ["fama-macbeth", "fama macbeth", "cross-sectional estimation"]
+        for phrase in forbidden:
+            assert phrase not in text, (
+                f"README contains '{phrase}'. "
+                "Cross-sectional estimation is out of scope — see CHANGELOG."
+            )
 
-    def test_matches_get_beta(self, single_target_result):
-        """The mimicking return equals the single beta column."""
-        result = single_target_result
-        g = result.get_factor_mimicking_returns("f1")
-        beta = result.get_beta("f1")
+    def test_readme_has_no_factor_mimicking_claim(self):
+        """README must not mention factor-mimicking returns."""
+        import pathlib
 
-        pd.testing.assert_series_equal(g, beta.iloc[:, 0].rename("f1"), check_dtype=False)
-
-    def test_invalid_factor_raises(self, single_target_result):
-        """Unknown factor raises KeyError."""
-        result = single_target_result
-        with pytest.raises(KeyError):
-            result.get_factor_mimicking_returns("nope")
-
-    def test_all_returns_dataframe_shape(self, single_target_result):
-        """get_all_factor_mimicking_returns returns a (T, K) DataFrame."""
-        result = single_target_result
-        g_all = result.get_all_factor_mimicking_returns()
-
-        assert isinstance(g_all, pd.DataFrame)
-        assert g_all.shape == (100, 2)
-        assert list(g_all.columns) == ["f1", "f2"]
-        pd.testing.assert_index_equal(g_all.index, result.index)
-
-    def test_multi_target_raises(self, multi_target_result):
-        """Calling on a multi-target result raises RuntimeError."""
-        result = multi_target_result
-        with pytest.raises(RuntimeError):
-            result.get_factor_mimicking_returns("f1")
-
-    def test_all_multi_target_raises(self, multi_target_result):
-        """get_all_factor_mimicking_returns also raises on multi-target results."""
-        result = multi_target_result
-        with pytest.raises(RuntimeError):
-            result.get_all_factor_mimicking_returns()
+        readme = pathlib.Path(__file__).parent.parent / "README.md"
+        text = readme.read_text(encoding="utf-8").lower()
+        assert "factor mimicking" not in text, (
+            "README contains 'factor mimicking'. "
+            "The accessors were removed in v0.3.0 — do not re-document them."
+        )

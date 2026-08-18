@@ -15,9 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get_factor_adjusted_returns()` on `RollingOLSResult`: exposes the FWL step 2
   output (asset returns with only the controls partialled out), distinct from
   `get_residuals(factor)` which also removes the factor (step 3). (#3)
-- `get_factor_mimicking_returns(factor)` and `get_all_factor_mimicking_returns()`
-  on `RollingOLSResult`: named accessors for the cross-sectional use case where
-  the rolling beta is the factor mimicking return. (#5)
 - `get_control_beta(factor, control)` reinstated and reimplemented correctly via
   Frisch-Waugh-Lovell — returns the joint (not univariate marginal) control beta.
   Enabled with `return_control_betas=True` on `transform()`/`fit_transform()`.
@@ -37,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   current-window residuals are not retained across time or factors.
 
 ### Removed
+- `get_factor_mimicking_returns(factor)` and `get_all_factor_mimicking_returns()`
+  on `RollingOLSResult`. These accessors claimed to produce cross-sectional
+  Fama-MacBeth factor returns but performed no cross-sectional estimation: they
+  renamed the single column of an ordinary time-series rolling beta. The
+  documented `window=1` usage is degenerate and the 2-D rolling frame cannot
+  represent the date × asset × factor structure required. Cross-sectional
+  estimation is out of scope and tracked separately. (F13)
 - Rolling Gram-Schmidt orthogonalization: `orthogonalize_factors` and
   `orthogonalize_controls` on `fit()`/`fit_transform()`, and
   `get_raw_exposure_signal()`. Orthogonalization is preprocessing, produces a
@@ -64,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarified that `dtype` controls pandas DataFrame storage only; internal matrix
   operations always run in float64 for numerical stability. (#10)
 - README updated with EWMA, `warn_singular`, factor-adjusted returns, control
-  betas, factor mimicking returns, and the precision note.
+  betas, and the precision note.
 
 ## [0.1.2] - 2026-04-14
 ### Added

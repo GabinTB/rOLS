@@ -494,7 +494,7 @@ A future cross-sectional estimator requires its own data model, specification,
 oracle, and tests. Renaming a time-series beta does not identify a
 cross-sectional factor return.
 
-> **v0.2.1 deviates:** `get_factor_mimicking_returns()` and its README example
-> label a single-target time-series beta as a cross-sectional factor return.
-> No cross-sectional estimation occurs, and the documented `window=1` example
-> is degenerate under sample covariance.
+The `get_factor_mimicking_returns()` and `get_all_factor_mimicking_returns()`
+accessors that appeared in v0.2.1 have been removed in v0.3.0 (audit finding
+F13). They performed no cross-sectional estimation and have been replaced by
+an out-of-scope note in the README.

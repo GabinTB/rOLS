@@ -296,24 +296,6 @@ class RollingOLSResult:
             raise KeyError(f"Control '{control}' not found. Available controls: {available}")
         return self._full_index(self._select_assets(self._control_betas[factor][control], assets))
 
-    def get_factor_mimicking_returns(self, factor: str) -> pd.Series:
-        """Return the single-target beta series for cross-sectional use."""
-        beta = self.get_beta(factor)
-        if beta.shape[1] != 1:
-            raise RuntimeError(
-                "get_factor_mimicking_returns() requires transform() to be called "
-                "with a single target column. "
-                f"Got {beta.shape[1]} columns: {beta.columns.tolist()}"
-            )
-        return beta.iloc[:, 0].rename(factor)
-
-    def get_all_factor_mimicking_returns(self) -> pd.DataFrame:
-        """Return all single-target factor mimicking series."""
-        return pd.concat(
-            {factor: self.get_factor_mimicking_returns(factor) for factor in self.factor_cols},
-            axis=1,
-        )
-
     def _standard_errors_for(
         self,
         factor: str,
