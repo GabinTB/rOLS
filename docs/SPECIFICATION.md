@@ -547,7 +547,11 @@ provide:
 - cross-sectional factor-return or Fama-MacBeth estimation, which requires an
   explicit date by asset by factor data model;
 - factor-mimicking portfolio construction;
-- panel estimators with entity or time effects; or
+- panel estimators with entity or time effects;
+- panel-robust inference: HAC SEs correct for time-series serial correlation
+  only. Cross-sectional inference (clustered SEs, Driscoll-Kraay
+  heteroskedasticity and autocorrelation consistent SEs for panels) requires a
+  separate estimator not provided here; or
 - implicit data alignment, resampling, imputation, or calendar conversion.
 
 A future cross-sectional estimator requires its own data model, specification,

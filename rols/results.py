@@ -387,6 +387,12 @@ class RollingOLSResult:
         the nominal level further.  For OLS (``lambda_ == 0``), β_λ = β₀ and
         this distinction collapses.
 
+        **Time-series only.** The sandwich corrects for serial correlation in
+        each asset's own residuals.  It does not correct for cross-sectional
+        dependence across assets.  Aggregating per-asset t-statistics in a
+        correlated panel overstates significance; see
+        ``docs/SPECIFICATION.md`` §13 for panel-robust alternatives.
+
         Requires ``hac_lags`` to be set on the constructor (raises otherwise).
         Computation is lazy and streams one endpoint at a time.
         """
@@ -399,9 +405,9 @@ class RollingOLSResult:
     ) -> pd.DataFrame:
         """HAC t-statistic: ``beta / se``, with NaN where undefined.
 
-        See ``get_se`` for the estimand.  The t-statistic for Ridge should not
-        be compared against OLS critical values without accounting for the bias
-        of β̂_λ relative to β₀.
+        See ``get_se`` for the estimand and the time-series-only caveat.
+        The t-statistic for Ridge should not be compared against OLS critical
+        values without accounting for the bias of β̂_λ relative to β₀.
         """
         tstat = self.get_beta(factor, assets).div(self.get_se(factor, assets))
         return tstat.replace([float("inf"), float("-inf")], float("nan"))

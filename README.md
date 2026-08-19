@@ -392,6 +392,16 @@ The sandwich uses the full design, including the intercept and controls, the
 same complete-case rows, Bartlett lag weights, and the estimator's observation
 weights. Computation is lazy and streams one endpoint at a time.
 
+**HAC SEs are time-series only.** rOLS computes a Newey-West sandwich per
+asset that corrects for serial correlation in each asset's time-series
+residuals. It does **not** correct for cross-sectional dependence across
+assets. In a panel of correlated assets driven by shared factors, aggregating
+per-asset t-statistics or counting significant assets overstates significance
+because the effective number of independent observations is far smaller than
+the number of assets. For panel-robust inference that accounts for
+cross-sectional dependence, use clustered standard errors or the Driscoll-Kraay
+estimator via an external tool.
+
 **Ridge inference caveat.** When `lambda_ > 0`, the sandwich estimates the
 sampling variability of the fixed-penalty estimator β̂_λ around the penalized
 pseudo-true parameter β_λ — not around the unpenalized population coefficient

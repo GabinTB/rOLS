@@ -2779,3 +2779,23 @@ class TestExplicitModeRequired:
                 r_joint.get_beta(fac).values,
                 atol=1e-5,
             )
+
+
+class TestHACPanelDependenceDocumentation:
+    """Issue #19: README and SPECIFICATION document HAC time-series-only scope."""
+
+    def test_readme_hac_section_warns_cross_sectional_dependence(self):
+        """README HAC section must state the time-series-only / panel caveat."""
+        readme = __import__("pathlib").Path(__file__).parent.parent / "README.md"
+        text = readme.read_text()
+        assert "time-series only" in text or "cross-sectional dependence" in text, (
+            "README must warn that HAC SEs do not correct for cross-sectional dependence"
+        )
+
+    def test_specification_out_of_scope_mentions_panel_robust(self):
+        """SPECIFICATION.md §13 must mention clustered SEs or Driscoll-Kraay."""
+        spec = __import__("pathlib").Path(__file__).parent.parent / "docs" / "SPECIFICATION.md"
+        text = spec.read_text()
+        assert "clustered" in text or "Driscoll" in text, (
+            "SPECIFICATION §13 must name panel-robust inference alternatives"
+        )
