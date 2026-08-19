@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rols"
-version = "0.3.1"
+version = "0.3.2"
 description = "Vectorized rolling and expanding regression for multi-target, multi-factor time series."
 readme = "README.md"
 license = "MIT"

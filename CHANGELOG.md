@@ -5,6 +5,19 @@ All notable changes to rOLS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] — 2026-08-19
+
+### Added
+- `tests/test_fwl_conditioning.py`: 10 tests across 5 groups validating the FWL
+  rank-condition heuristic under near-collinear and rank-deficient designs (#20).
+
+### Fixed / Documented
+- HAC SEs are time-series only — documented the panel cross-sectional dependence
+  limitation in `get_se`/`get_tstat` docstrings, `docs/SPECIFICATION.md` §13,
+  and `README.md` (#19).
+
+---
+
 ## [0.3.1] — 2026-08-18
 
 ### Added
@@ -272,6 +285,7 @@ for a practical before/after table.
   partialling, rolling Gram-Schmidt orthogonalization, Newey-West HAC standard
   errors, lagged signals, and long-format output.
 
+[0.3.2]: https://github.com/GabinTB/rOLS/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/GabinTB/rOLS/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/GabinTB/rOLS/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/GabinTB/rOLS/compare/v0.1.2...v0.2.1
