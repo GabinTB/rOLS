@@ -645,6 +645,3 @@ updating was considered and rejected — see
 - [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — cost model, memory
   arithmetic, and measured benchmark numbers.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in v0.3.x and why.
-- [`.claude/audits/20260813/`](.claude/audits/20260813/) — the independent
-  audit that drove this release, including the finding each CHANGELOG entry
-  references.

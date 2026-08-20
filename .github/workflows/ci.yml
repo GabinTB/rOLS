@@ -35,11 +35,23 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - run: uv build
-      - name: Smoke-import the wheel in a clean env
+      - name: Validate built artifacts and smoke test
         run: |
           uv venv /tmp/smoke --python 3.12
           uv pip install --python /tmp/smoke/bin/python dist/*.whl
           /tmp/smoke/bin/python -c "
           from rols import RollingOLS, __version__
+          import pandas as pd
+          ols = RollingOLS(window=10)
+          df = pd.DataFrame({'y': [1]*20, 'f': [1]*20})
+          print(ols.estimate_memory(df[['y']], df[['f']]))
           print(f'rols {__version__} ok')
+          "
+          python -c "
+          import zipfile, tarfile, sys
+          whl = next(__import__('pathlib').Path('dist').glob('*.whl'))
+          tgz = next(__import__('pathlib').Path('dist').glob('*.tar.gz'))
+          assert any('LICENSE' in n for n in zipfile.ZipFile(whl).namelist()), 'LICENSE missing from wheel'
+          assert any('LICENSE' in m.name for m in tarfile.open(tgz).getmembers()), 'LICENSE missing from sdist'
+          print('License files verified')
           "
