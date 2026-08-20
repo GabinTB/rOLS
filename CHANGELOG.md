@@ -51,8 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] — 2026-08-18
 
-**A correctness release.** An independent four-reviewer audit (13 August 2026,
-`.claude/audits/20260813/`) found that v0.2.1 did not estimate the model its
+**A correctness release.** An independent four-reviewer audit (13 August 2026) found that v0.2.1 did not estimate the model its
 documentation described: the intercept convention was internally
 inconsistent, `lambda_` had no effect without controls, rolling
 Frisch-Waugh-Lovell and Gram-Schmidt used nested rather than window-wise
@@ -233,7 +232,6 @@ for a practical before/after table.
 > FWL and Gram-Schmidt used nested rather than window-wise projections, and
 > HAC standard errors did not correspond to the reported coefficients.
 > **Estimates from v0.2.1 and earlier should not be relied upon.** See
-> `.claude/audits/20260813/` and the `[Unreleased] — v0.3.0` entry above.
 
 ### Added
 - `ewma_halflife` parameter on `RollingOLS`: exponentially weight observations
