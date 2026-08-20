@@ -1,11 +1,13 @@
 import re
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 
-def test_readme_snippets():
+def test_readme_snippets(monkeypatch):
     readme_path = Path(__file__).parent.parent / "README.md"
     content = readme_path.read_text()
 
@@ -14,29 +16,47 @@ def test_readme_snippets():
     class MockWebReader:
         @staticmethod
         def DataReader(name, source, start):
-            dates = pd.date_range("2020-01-01", periods=100)
-            if name == "12_Industry_Portfolios":
+            if source == "famafrench" or name == "12_Industry_Portfolios":
+                dates = pd.period_range("2020-01", periods=100, freq="M")
                 df = pd.DataFrame(np.random.randn(100, 12), index=dates)
                 df.index.name = "Date"
                 return {1: df}
-            else:
-                df = pd.DataFrame(
-                    np.random.randn(100, 2), index=dates, columns=["CPIAUCSL", "CPILFESL"]
-                )
-                return df
+
+            dates = pd.date_range("2020-01-01", periods=100, freq="D")
+            df = pd.DataFrame(
+                np.random.randn(100, 2),
+                index=dates,
+                columns=["CPIAUCSL", "CPILFESL"],
+            )
+            return df
 
     class MockPDR:
         @staticmethod
         def get_data_famafrench(name, start):
-            dates = pd.date_range("2020-01-01", periods=100)
-            df = pd.DataFrame(np.random.randn(100, 3), index=dates, columns=["Mkt-RF", "SMB", "RF"])
+            dates = pd.period_range("2020-01", periods=100, freq="M")
+            df = pd.DataFrame(
+                np.random.randn(100, 3),
+                index=dates,
+                columns=["Mkt-RF", "SMB", "RF"],
+            )
             df.index.name = "Date"
             return {0: df}
 
+    mock_pdr = types.ModuleType("pandas_datareader")
+    mock_pdr.get_data_famafrench = MockPDR.get_data_famafrench
+
+    mock_web = types.ModuleType("pandas_datareader.data")
+    mock_web.DataReader = MockWebReader.DataReader
+
+    mock_pdr.data = mock_web
+
+    monkeypatch.setitem(sys.modules, "pandas_datareader", mock_pdr)
+    monkeypatch.setitem(sys.modules, "pandas_datareader.data", mock_web)
+
     namespace = {
         "start": "2020-01-01",
-        "web": MockWebReader,
-        "pdr": MockPDR,
+        "web": mock_web,
+        "pdr": mock_pdr,
         "process": lambda factor, data: None,
         "targets": ["y1", "y2", "y3"],
         "group_a": ["y1"],
@@ -60,7 +80,7 @@ def test_readme_snippets():
         if "df = pd.concat([factors, controls, targets], axis=1).dropna()" in block:
             continue
 
-        # Ensure illustrative variables are present in df so snippet can run
+        # Ensure illustrative variables are present in df so snippets can run.
         if "df" not in namespace:
             namespace["df"] = pd.DataFrame(index=pd.date_range("2020-01-01", periods=100))
 
