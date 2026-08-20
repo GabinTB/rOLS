@@ -116,7 +116,7 @@ df = pd.merge(factor_df, asset_df, left_index=True, right_index=True, how='left'
 df = pd.merge(df, control_df, left_index=True, right_index=True, how='left').ffill()
 
 # Running the rolling regression
-ols = RollingOLS(window=12, expanding=False, lambda_=0.0)
+ols = RollingOLS(window=12, expanding=False, lambda_=0.0, mode="joint")
 ols.fit(factors=df[factors], controls=df[controls])
 result = ols.transform(assets=df[assets])
 
@@ -166,9 +166,11 @@ Fits the model on the regressors side. Residualizes factors against controls
 
 ```python
 # No controls
+ols = RollingOLS(window=60, mode="joint")
 ols.fit(df[["f1", "f2", "f3"]])
 
 # With controls
+ols = RollingOLS(window=60, mode="joint")
 ols.fit(df[["f1", "f2"]], controls=df[["ctrl1", "ctrl2"]])
 ```
 
@@ -186,6 +188,7 @@ result = ols.transform(df[["y1", "y2", "y3"]])
 The fitted model can be reused on different target sets without re-fitting:
 
 ```python
+ols = RollingOLS(window=60, mode="joint")
 ols.fit(df[["f1", "f2"]], controls=df[["ctrl1"]])
 result_a = ols.transform(df[group_a])
 result_b = ols.transform(df[group_b])
@@ -282,6 +285,11 @@ ols.fit(df[["f1", "f2", "f3"]])
 ols = RollingOLS(window=60, mode="joint")
 result = ols.fit(df[["f1", "f2", "f3"]]).transform(df[targets])
 # result.get_beta("f1") is conditional on f2 and f3 too
+
+# Batched mode — estimates factor-specific models rather than mutually controlled coefficients
+ols_batched = RollingOLS(window=60, mode="batched")
+result_batched = ols_batched.fit(df[["f1", "f2", "f3"]]).transform(df[targets])
+# result_batched.get_beta("f1") is conditional on controls only, not on f2 and f3
 ```
 
 `mode="joint"` fits the multivariate model `y = α + β₁f₁ + β₂f₂ + β₃f₃ + ε`
@@ -368,7 +376,7 @@ to the regressors, so `get_partial_r2` can be negative.
 # lambda_ > 0 penalizes the normalized, standardized objective
 # stabilizes estimation when factors are correlated; effective strength is
 # invariant to window length, EWMA half-life, and complete-case sample size
-ols = RollingOLS(window=120, lambda_=1e-3)
+ols = RollingOLS(window=120, lambda_=1e-3, mode="joint")
 result = ols.fit(df[["f1", "f2", "f3"]]).transform(df[targets])
 ```
 
@@ -380,7 +388,7 @@ import numpy as np
 # Common rule of thumb for lag selection: floor(T^(1/3))
 hac_lags = int(np.floor(len(df) ** (1/3)))
 
-ols = RollingOLS(window=120, hac_lags=hac_lags)
+ols = RollingOLS(window=120, hac_lags=hac_lags, mode="joint")
 result = ols.fit(df[["f1", "f2"]]).transform(df[targets])
 
 se    = result.get_se("f1")      # Newey-West SE
@@ -421,7 +429,7 @@ the weight of the most recent one.
 
 ```python
 # ~3-month half-life inside a 1-year window
-ols = RollingOLS(window=252, ewma_halflife=63)
+ols = RollingOLS(window=252, ewma_halflife=63, mode="joint")
 result = ols.fit(df[["f1", "f2"]]).transform(df[targets])
 ```
 

@@ -2780,6 +2780,12 @@ class TestExplicitModeRequired:
                 atol=1e-5,
             )
 
+    def test_issue_21_reproduction(self):
+        """Exact reproduction case from issue #21."""
+        factors = pd.DataFrame({"f1": [0.0, 1.0, 2.0], "f2": [1.0, 0.0, 1.0]})
+        with pytest.raises(ValueError, match="mode"):
+            RollingOLS(window=3).fit(factors)
+
 
 class TestHACPanelDependenceDocumentation:
     """Issue #19: README and SPECIFICATION document HAC time-series-only scope."""

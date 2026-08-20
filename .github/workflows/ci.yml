@@ -23,6 +23,8 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pytest
       - run: uv run pytest -m slow
+      - name: Test README snippets
+        run: uv run pytest tests/test_docs.py
 
   package:
     runs-on: ubuntu-latest

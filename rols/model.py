@@ -276,7 +276,7 @@ class RollingOLS:
     --------
     Basic usage — no controls:
 
-    >>> ols = RollingOLS(window=252)
+    >>> ols = RollingOLS(window=252, mode="joint")
     >>> result = ols.fit(df[["f1", "f2"]]).transform(df[["AAPL", "MSFT"]])
     >>> result.get_beta("f1")      # DataFrame (T x N_assets)
     >>> result.get_signal("f1")
@@ -284,7 +284,7 @@ class RollingOLS:
 
     With controls and Ridge:
 
-    >>> ols = RollingOLS(window=252, lambda_=1e-4, hac_lags=5)
+    >>> ols = RollingOLS(window=252, lambda_=1e-4, hac_lags=5, mode="joint")
     >>> ols.fit(df[["f1", "f2"]], controls=df[["Mkt-RF", "SMB"]])
     >>> result = ols.transform(df[["AAPL", "MSFT"]])
     >>> result.get_se("f1")        # Newey-West SE
