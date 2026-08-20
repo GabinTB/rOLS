@@ -209,6 +209,7 @@ result.get_signal("f1")        # beta_t * factor_t (or lagged)
 result.get_r2("f1")            # full-model R²
 result.get_partial_r2("f1")    # f1's incremental R² over the model without it
 result.get_residuals("f1")     # endpoint regression residuals
+result.get_fitted_values("f1") # full contemporaneous fitted value
 result.get_factor_adjusted_returns()    # controls removed only (FWL step 2)
 
 result.get_se("f1")            # Newey-West SE — requires hac_lags

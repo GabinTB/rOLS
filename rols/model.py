@@ -1243,6 +1243,7 @@ class RollingOLS:
         result._residual_loader = load_residuals
         result._se_loader = load_standard_errors
         result._factor_adjusted_loader = load_factor_adjusted_returns
+        result._target_loader = stored_targets
 
         return result
 

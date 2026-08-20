@@ -65,6 +65,9 @@ class RollingOLSResult:
     _factor_adjusted_loader: Callable[[Sequence[str] | None], pd.DataFrame] | None = field(
         default=None, repr=False
     )
+    _target_loader: Callable[[Sequence[str] | None], pd.DataFrame] | None = field(
+        default=None, repr=False
+    )
 
     # Every factor-sized lazy cache is bounded independently by cache_size.
     _statistics_cache: OrderedDict[str, FactorStatistics] = field(
@@ -225,6 +228,54 @@ class RollingOLSResult:
         Adjusted when ``adj_r2=True``. Derived lazily and cached per factor.
         """
         return self._full_index(self._statistics_for(factor, assets).partial_r2)
+
+    def get_fitted_values(
+        self,
+        factor: str | None = None,
+        assets: Sequence[str] | None = None,
+    ) -> pd.DataFrame:
+        """Endpoint fitted value from the model.
+
+        Evaluates the contemporaneous fit: ``ŷ_t = α̂_t + c_t^T γ̂_t + f_t^T β̂_t``.
+        Satisfies the invariant ``y = ŷ + ê`` regardless of ``lag_signal``.
+
+        Parameters
+        ----------
+        factor:
+            Factor name. In batched mode, selects which factor's model to use
+            (required if there is more than one factor). In joint mode, ignored
+            because there is only one joint model.
+        assets:
+            Optional subset of asset columns to return.
+        """
+        if self.mode == "joint":
+            if factor is not None:
+                import warnings
+
+                warnings.warn(
+                    "The `factor` argument to get_fitted_values() is ignored in joint mode.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            factor_to_load = self.factor_cols[0] if self.factor_cols else None
+        else:
+            if factor is None:
+                if len(self.factor_cols) > 1:
+                    raise ValueError(
+                        "get_fitted_values() requires a `factor` argument in batched mode "
+                        "when there is more than one factor."
+                    )
+                factor_to_load = self.factor_cols[0] if self.factor_cols else None
+            else:
+                factor_to_load = factor
+
+        if self._target_loader is None:
+            raise RuntimeError("Fitted values are not available.")
+
+        y = self._full_index(self._target_loader(assets))
+        # get_residuals requires a valid string. If factor_to_load is None, let it raise KeyError normally.
+        # factor_to_load shouldn't be None unless factor_cols is empty, which is caught by _check_factor.
+        return y - self.get_residuals(factor_to_load, assets)
 
     def get_residuals(
         self,

@@ -523,7 +523,28 @@ $$
 > Under the version 0.3.0 direct joint solve, controls no longer create a
 > separate factor representation.
 
-## 12. Index and alignment contract
+## 12. Fitted values and residuals
+
+The contemporaneous fitted value at endpoint `t` evaluates the model using
+the coefficients estimated at `t`:
+
+$$
+\widehat y_{i,t} = \widehat\alpha_{i,t} + c_t^\top \widehat\gamma_{i,t} + f_t^\top \widehat\beta_{i,t}.
+$$
+
+`get_fitted_values()` returns this complete model evaluation. Unlike signals,
+fitted values are always contemporaneous; they do not inherit `lag_signal`.
+
+The endpoint residual is the complement:
+
+$$
+\widehat\varepsilon_{i,t} = y_{i,t} - \widehat y_{i,t}.
+$$
+
+`get_residuals()` returns this residual. This satisfies the invariant
+$y = \widehat y + \widehat\varepsilon$ by definition.
+
+## 13. Index and alignment contract
 
 Factors, controls, and targets must have indexes that are:
 
@@ -539,7 +560,7 @@ align inputs before calling the estimator.
 > later pandas operations align by label. Same-length permuted inputs can
 > therefore combine two different row pairings without an error.
 
-## 13. Out of scope
+## 14. Out of scope
 
 rOLS is a rolling or expanding time-series regression library. It does not
 provide:

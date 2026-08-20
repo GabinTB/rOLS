@@ -408,3 +408,122 @@ class TestDtypePrecision:
         )
         assert result_32.get_beta("f0").to_numpy().dtype == np.float64
         assert result_32.get_r2("f0").to_numpy().dtype == np.float64
+
+
+@pytest.mark.parametrize("mode", ["batched", "joint"])
+@pytest.mark.parametrize("lambda_", [0.0, 1e-4])
+@pytest.mark.parametrize("controls", [True, False])
+@pytest.mark.parametrize("fit_intercept", [True, False])
+def test_fitted_values_residual_coherence(
+    mode: str, lambda_: float, controls: bool, fit_intercept: bool
+):
+    """get_fitted_values() + get_residuals() == y on the complete-case sample."""
+    factors, ctrls, targets = _random_panel(n_observations=100, n_factors=2, n_controls=1)
+    if not controls:
+        ctrls = None
+
+    ols = RollingOLS(
+        window=20,
+        lambda_=lambda_,
+        mode=mode,
+        fit_intercept=fit_intercept,
+    )
+    result = ols.fit(factors, controls=ctrls).transform(targets)
+
+    for factor in factors.columns:
+        if mode == "joint":
+            # Just pass the factor, warning is emitted if we pass factor in joint mode,
+            # but wait, the accessor accepts it with a warning. We can pass None in joint mode.
+            pass
+
+        # Get fitted values and residuals
+        fitted = result.get_fitted_values(factor if mode == "batched" else None)
+        residuals = result.get_residuals(factor)
+
+        # Test invariant
+        coherence = fitted + residuals
+
+        # We only expect equality on complete-case sample (non-NaNs)
+        mask = ~fitted.isna()
+
+        np.testing.assert_allclose(
+            coherence[mask].values,
+            targets[mask].values,
+            atol=1e-12,
+        )
+
+
+def test_fitted_values_lag_independence():
+    """Fitted values do not inherit lag_signal; signals do."""
+    factors, ctrls, targets = _random_panel(n_observations=50, n_factors=1, n_controls=0)
+
+    ols_contemp = RollingOLS(window=10, lag_signal=False, mode="joint")
+    res_contemp = ols_contemp.fit(factors).transform(targets)
+
+    ols_lagged = RollingOLS(window=10, lag_signal=True, mode="joint")
+    res_lagged = ols_lagged.fit(factors).transform(targets)
+
+    # Fitted values should be identical
+    np.testing.assert_allclose(
+        res_contemp.get_fitted_values().values,
+        res_lagged.get_fitted_values().values,
+        equal_nan=True,
+    )
+
+    # Signals should differ (except maybe at NaNs)
+    sig_contemp = res_contemp.get_signal(factors.columns[0]).fillna(0)
+    sig_lagged = res_lagged.get_signal(factors.columns[0]).fillna(0)
+    assert not np.allclose(sig_contemp.values, sig_lagged.values)
+
+
+def test_fitted_values_batched_vs_joint():
+    """Batched requires factor and varies; Joint ignores factor and doesn't vary."""
+    factors, ctrls, targets = _random_panel(n_observations=50, n_factors=2, n_controls=1)
+
+    # Batched
+    res_batched = (
+        RollingOLS(window=10, mode="batched").fit(factors, controls=ctrls).transform(targets)
+    )
+
+    # Must raise if no factor specified and >1 factors exist
+    with pytest.raises(ValueError, match="requires a `factor` argument"):
+        res_batched.get_fitted_values()
+
+    fit_f1 = res_batched.get_fitted_values(factors.columns[0])
+    fit_f2 = res_batched.get_fitted_values(factors.columns[1])
+
+    # They should differ because each includes a different factor
+    assert not np.allclose(fit_f1.fillna(0).values, fit_f2.fillna(0).values)
+
+    # Joint
+    res_joint = RollingOLS(window=10, mode="joint").fit(factors, controls=ctrls).transform(targets)
+
+    # factor ignored in joint, they should all be identical
+    with pytest.warns(DeprecationWarning, match="ignored in joint mode"):
+        fit_joint_f1 = res_joint.get_fitted_values(factors.columns[0])
+
+    fit_joint_none = res_joint.get_fitted_values()
+
+    np.testing.assert_allclose(
+        fit_joint_f1.values,
+        fit_joint_none.values,
+        equal_nan=True,
+    )
+
+
+def test_fitted_values_degenerate_single_factor():
+    """get_fitted_values() equals get_signal() when no controls and fit_intercept=False."""
+    factors, ctrls, targets = _random_panel(n_observations=50, n_factors=1, n_controls=0)
+
+    res = (
+        RollingOLS(window=10, mode="joint", fit_intercept=False, lag_signal=False)
+        .fit(factors)
+        .transform(targets)
+    )
+
+    f1 = factors.columns[0]
+    np.testing.assert_allclose(
+        res.get_fitted_values().values,
+        res.get_signal(f1).values,
+        equal_nan=True,
+    )
