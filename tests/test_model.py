@@ -475,7 +475,7 @@ class TestRollingOLSTransform:
         assets = pd.DataFrame({"asset": 3.0 + 2.0 * factors["factor"]}, index=index)
 
         result = RollingOLS(
-            window=12, min_periods=8, dtype="float64", mode="batched"
+            window=12, min_periods=8, precision="double", mode="batched"
         ).fit_transform(factors, assets)
 
         np.testing.assert_allclose(result.get_intercept("factor").iloc[7:], 3.0, atol=1e-12)
@@ -515,7 +515,7 @@ class TestRollingOLSTransform:
             min_periods=10,
             expanding=expanding,
             fit_intercept=fit_intercept,
-            dtype="float64",
+            precision="double",
             mode="batched",
         )
         result = model.fit_transform(factors, targets, controls=controls)
@@ -556,7 +556,7 @@ class TestRollingOLSTransform:
         assets = pd.DataFrame({"asset": rng.normal(size=n_observations)}, index=index)
 
         result = RollingOLS(
-            window=252, min_periods=252, dtype="float64", mode="batched"
+            window=252, min_periods=252, precision="double", mode="batched"
         ).fit_transform(factors, assets, controls=controls)
         first_valid = np.flatnonzero(result.get_beta("factor").notna().to_numpy()[:, 0])[0]
 
@@ -574,7 +574,7 @@ class TestRollingOLSTransform:
         )
 
         current = RollingOLS(
-            window=20, min_periods=20, dtype="float64", mode="batched"
+            window=20, min_periods=20, precision="double", mode="batched"
         ).fit_transform(factors, assets, controls=controls)
         old_factor_residual = rolling_residualize(
             factors, controls, window=20, min_periods=20, expanding=False
@@ -617,7 +617,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame(np.random.randn(T, 2), columns=["c1", "c2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, dtype="float64", mode="batched")
+        ols = RollingOLS(window=20, precision="double", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
         expected = oracle_rolling(
             assets,
@@ -646,7 +646,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame(np.random.randn(T, 1), columns=["c1"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=30, dtype="float64", mode="batched")
+        ols = RollingOLS(window=30, precision="double", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
         expected = oracle_rolling(
             assets,
@@ -707,7 +707,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame({"c": c})
         assets = pd.DataFrame({"a": rng.standard_normal(T)})
 
-        ols = RollingOLS(window=W, dtype="float64", mode="batched")
+        ols = RollingOLS(window=W, precision="double", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         cb_f1 = result.get_control_beta("f1", "c")["a"]
@@ -746,7 +746,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame({"c": c}, index=idx)
         assets = pd.DataFrame({"a": rng.standard_normal(W)}, index=idx)
 
-        ols = RollingOLS(window=W, dtype="float64", mode="batched")
+        ols = RollingOLS(window=W, precision="double", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         cb_f1 = result.get_control_beta("f1", "c").iloc[-1, 0]
@@ -782,7 +782,7 @@ class TestRollingOLSTransform:
         controls = pd.DataFrame({"c1": c1, "c2": c2}, index=idx)
         assets = pd.DataFrame({"y": y}, index=idx)
 
-        ols = RollingOLS(window=W, dtype="float64", mode="batched")
+        ols = RollingOLS(window=W, precision="double", mode="batched")
         result = ols.fit_transform(factors, assets, controls=controls, return_control_betas=True)
 
         # Hand-compute FWL: residualize c1 and y on [1, f, c2].
@@ -844,7 +844,7 @@ class TestRollingOLSMissingData:
         assets.loc[1, "asset"] = np.nan
 
         result = RollingOLS(
-            window=4, min_periods=3, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
+            window=4, min_periods=3, ewma_halflife=ewma_halflife, precision="double", mode="batched"
         ).fit_transform(factors, assets)
 
         slope = result.get_beta("factor").iloc[-1, 0]
@@ -873,7 +873,11 @@ class TestRollingOLSMissingData:
             seed=31,
         )
         result = RollingOLS(
-            window=18, min_periods=10, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
+            window=18,
+            min_periods=10,
+            ewma_halflife=ewma_halflife,
+            precision="double",
+            mode="batched",
         ).fit_transform(factors, targets, controls=controls, return_control_betas=True)
         expected = oracle_rolling(
             targets,
@@ -919,10 +923,18 @@ class TestRollingOLSMissingData:
         assets.loc[0, "asset"] = np.nan
 
         with_nan = RollingOLS(
-            window=12, min_periods=8, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
+            window=12,
+            min_periods=8,
+            ewma_halflife=ewma_halflife,
+            precision="double",
+            mode="batched",
         ).fit_transform(factors, assets, controls=controls)
         deleted = RollingOLS(
-            window=12, min_periods=8, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
+            window=12,
+            min_periods=8,
+            ewma_halflife=ewma_halflife,
+            precision="double",
+            mode="batched",
         ).fit_transform(
             factors.iloc[1:].reset_index(drop=True),
             assets.iloc[1:].reset_index(drop=True),
@@ -944,7 +956,7 @@ class TestRollingOLSMissingData:
             "window": 12,
             "min_periods": 8,
             "ewma_halflife": ewma_halflife,
-            "dtype": "float64",
+            "precision": "double",
         }
 
         together = RollingOLS(**options, mode="batched").fit_transform(factors, assets)
@@ -973,7 +985,7 @@ class TestRollingOLSMissingData:
         )
 
         result = RollingOLS(
-            window=6, min_periods=4, ewma_halflife=ewma_halflife, dtype="float64", mode="batched"
+            window=6, min_periods=4, ewma_halflife=ewma_halflife, precision="double", mode="batched"
         ).fit_transform(factors, assets)
 
         assert result.get_n_used("factor").loc[4, "exact"] == 4
@@ -1155,7 +1167,7 @@ class TestRollingOLSSignalRepresentation:
         controls = pd.DataFrame({"control": rng.normal(size=50)}) if with_controls else None
         assets = pd.DataFrame({"asset": rng.normal(size=50)})
 
-        result = RollingOLS(window=20, dtype="float64", mode="batched").fit_transform(
+        result = RollingOLS(window=20, precision="double", mode="batched").fit_transform(
             factors, assets, controls=controls
         )
 
@@ -1171,7 +1183,7 @@ class TestRollingOLSSignalRepresentation:
         factors = pd.DataFrame({"factor": rng.normal(size=40)})
         assets = pd.DataFrame({"asset": 3.0 + 2.0 * factors["factor"]})
         result = RollingOLS(
-            window=15, min_periods=10, dtype="float64", mode="batched"
+            window=15, min_periods=10, precision="double", mode="batched"
         ).fit_transform(factors, assets)
 
         reconstructed = (
@@ -1197,7 +1209,7 @@ class TestRollingOLSSignalRepresentation:
             }
         )
         assets = pd.DataFrame({"asset": rng.normal(size=45)})
-        model = RollingOLS(window=15, lag_signal=True, dtype="float64", mode="batched")
+        model = RollingOLS(window=15, lag_signal=True, precision="double", mode="batched")
         result = model.fit_transform(factors, assets)
         endpoint = 30
         previous_beta = result.get_beta("f2").iloc[endpoint - 1, 0]
@@ -1220,7 +1232,7 @@ class TestRollingOLSR2Definitions:
             n_controls=n_controls,
             seed=40,
         )
-        options = {"window": 20, "min_periods": 20, "dtype": "float64"}
+        options = {"window": 20, "min_periods": 20, "precision": "double"}
         unadjusted = RollingOLS(**options, mode="batched").fit_transform(
             factors, targets, controls=controls
         )
@@ -1275,7 +1287,7 @@ class TestRollingOLSR2Definitions:
             seed=41,
         )
         result = RollingOLS(
-            window=18, min_periods=10, dtype="float64", mode="batched"
+            window=18, min_periods=10, precision="double", mode="batched"
         ).fit_transform(factors, targets, controls=controls)
         values = result.get_r2(factors.columns[0]).to_numpy()
         finite = values[np.isfinite(values)]
@@ -1287,7 +1299,7 @@ class TestRollingOLSR2Definitions:
         factor = pd.DataFrame({"factor": [-2.0, -1.0, 0.0, 1.0, 3.0]})
         assets = pd.DataFrame({"asset": [4.0, 1.0, 2.0, 5.0, 7.0]})
         result = RollingOLS(
-            window=5, min_periods=5, fit_intercept=False, dtype="float64", mode="batched"
+            window=5, min_periods=5, fit_intercept=False, precision="double", mode="batched"
         ).fit_transform(factor, assets)
 
         beta = result.get_beta("factor").iloc[-1, 0]
@@ -1301,7 +1313,7 @@ class TestRollingOLSR2Definitions:
         factor = pd.DataFrame({"factor": np.linspace(-2.0, 3.0, 20)})
         assets = pd.DataFrame({"asset": 3.0 + 2.0 * factor["factor"]})
         result = RollingOLS(
-            window=20, min_periods=20, adj_r2=adj_r2, dtype="float64", mode="batched"
+            window=20, min_periods=20, adj_r2=adj_r2, precision="double", mode="batched"
         ).fit_transform(factor, assets)
 
         assert result.get_r2("factor").iloc[-1, 0] == pytest.approx(1.0, abs=1e-12)
@@ -1316,7 +1328,7 @@ class TestRollingOLSR2Definitions:
         assets = pd.DataFrame(
             {"asset": 2.0 * orthogonal[:, 0] + 4.0 * orthogonal[:, 1] + orthogonal[:, 2]}
         )
-        result = RollingOLS(window=60, dtype="float64", mode="batched").fit_transform(
+        result = RollingOLS(window=60, precision="double", mode="batched").fit_transform(
             factor, assets, controls=controls
         )
 
@@ -1332,7 +1344,7 @@ class TestRollingOLSR2Definitions:
         factor = pd.DataFrame({"factor": basis[:, 0]})
         assets = pd.DataFrame({"asset": 2.0 * basis[:, 0] + basis[:, 1]})
         controls = pd.DataFrame({"control": basis[:, 2]})
-        result = RollingOLS(window=50, dtype="float64", mode="batched").fit_transform(
+        result = RollingOLS(window=50, precision="double", mode="batched").fit_transform(
             factor, assets, controls=controls
         )
 
@@ -1349,7 +1361,7 @@ class TestRollingOLSR2Definitions:
         )
         factor.loc[3, "factor"] = np.nan
         result = RollingOLS(
-            window=20, min_periods=15, dtype="float64", mode="batched"
+            window=20, min_periods=15, precision="double", mode="batched"
         ).fit_transform(factor, assets, controls=controls)
         complete = assets["asset"].notna() & factor["factor"].notna() & controls["control"].notna()
         full = oracle_fit_window(
@@ -1374,7 +1386,7 @@ class TestRollingOLSR2Definitions:
         factor = pd.DataFrame({"factor": np.arange(8.0)})
         assets = pd.DataFrame({"asset": np.arange(8.0) ** 2})
         result = RollingOLS(
-            window=5, min_periods=2, adj_r2=True, dtype="float64", mode="batched"
+            window=5, min_periods=2, adj_r2=True, precision="double", mode="batched"
         ).fit_transform(factor, assets)
         partial = result.get_partial_r2("factor").to_numpy()
 
@@ -1390,7 +1402,12 @@ class TestRollingOLSR2Definitions:
             seed=45,
         )
         result = RollingOLS(
-            window=20, min_periods=15, ewma_halflife=4, adj_r2=True, dtype="float64", mode="batched"
+            window=20,
+            min_periods=15,
+            ewma_halflife=4,
+            adj_r2=True,
+            precision="double",
+            mode="batched",
         ).fit_transform(factors, targets, controls=controls)
         expected = oracle_rolling(
             targets,
@@ -1423,7 +1440,7 @@ class TestRollingOLSR2Definitions:
             "window": 20,
             "min_periods": 15,
             "adj_r2": True,
-            "dtype": "float64",
+            "precision": "double",
         }
         unweighted = RollingOLS(**options, mode="batched").fit_transform(
             factors, targets, controls=controls
@@ -1443,7 +1460,7 @@ class TestRollingOLSR2Definitions:
         factors = pd.DataFrame({"factor": rng.normal(size=30)})
         controls = pd.DataFrame({"control": rng.normal(size=30)})
         assets = pd.DataFrame({"asset": rng.normal(size=30)})
-        result = RollingOLS(window=20, dtype="float64", mode="batched").fit_transform(
+        result = RollingOLS(window=20, precision="double", mode="batched").fit_transform(
             factors, assets, controls=controls, return_control_betas=True
         )
         window = slice(10, 30)
@@ -1474,7 +1491,7 @@ class TestRollingOLSRidge:
         lambda_ = 0.25
 
         result = RollingOLS(
-            window=n_observations, lambda_=lambda_, dtype="float64", mode="batched"
+            window=n_observations, lambda_=lambda_, precision="double", mode="batched"
         ).fit_transform(factors, assets)
 
         assert result.get_beta("factor").iloc[-1, 0] == pytest.approx(
@@ -1511,7 +1528,7 @@ class TestRollingOLSRidge:
             penalize_controls=penalize_controls,
             fit_intercept=fit_intercept,
             ewma_halflife=ewma_halflife,
-            dtype="float64",
+            precision="double",
             mode="batched",
         ).fit_transform(factors, targets, controls=controls, return_control_betas=True)
         expected = oracle_rolling(
@@ -1557,9 +1574,9 @@ class TestRollingOLSRidge:
         factors = pd.DataFrame({"factor": factor_values})
         assets = pd.DataFrame({"asset": 7.0 + 2.0 * factor_values})
 
-        result = RollingOLS(window=60, lambda_=1e10, dtype="float64", mode="batched").fit_transform(
-            factors, assets
-        )
+        result = RollingOLS(
+            window=60, lambda_=1e10, precision="double", mode="batched"
+        ).fit_transform(factors, assets)
 
         assert abs(result.get_beta("factor").iloc[-1, 0]) < 1e-8
         assert result.get_intercept("factor").iloc[-1, 0] == pytest.approx(
@@ -1576,11 +1593,11 @@ class TestRollingOLSRidge:
         scaled_factors["f1"] *= 1000.0
 
         baseline = RollingOLS(
-            window=30, lambda_=0.6, dtype="float64", mode="batched"
+            window=30, lambda_=0.6, precision="double", mode="batched"
         ).fit_transform(factors, assets)
-        scaled = RollingOLS(window=30, lambda_=0.6, dtype="float64", mode="batched").fit_transform(
-            scaled_factors, assets
-        )
+        scaled = RollingOLS(
+            window=30, lambda_=0.6, precision="double", mode="batched"
+        ).fit_transform(scaled_factors, assets)
 
         np.testing.assert_allclose(
             scaled.get_beta("f1") * 1000.0,
@@ -1644,7 +1661,7 @@ class TestRollingOLSRidge:
         lambda_ = 0.5
 
         direct = (
-            RollingOLS(window=20, lambda_=lambda_, dtype="float64", mode="batched")
+            RollingOLS(window=20, lambda_=lambda_, precision="double", mode="batched")
             .fit_transform(factors, assets, controls=controls)
             .get_beta("factor")
         )
@@ -1752,7 +1769,7 @@ class TestRollingOLSEWMA:
         assets = pd.DataFrame(np.random.randn(T, 1), columns=["a1"])
 
         result = RollingOLS(
-            window=window, ewma_halflife=hl, dtype="float64", mode="batched"
+            window=window, ewma_halflife=hl, precision="double", mode="batched"
         ).fit_transform(factors, assets)
         beta = result.get_beta("f1")["a1"]
 
@@ -1799,7 +1816,7 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame(rng.normal(size=(T, 1)), columns=["f1"])
         assets = pd.DataFrame(rng.normal(size=(T, 2)), columns=["a1", "a2"])
 
-        common = {"window": W, "lambda_": 0.3, "dtype": "float64"}
+        common = {"window": W, "lambda_": 0.3, "precision": "double"}
         unweighted = RollingOLS(**common, mode="batched").fit_transform(factors, assets)
         weighted_model = RollingOLS(**common, mode="batched")
         # Replace _weights() so it returns np.ones(W) — normalized to sum=1 inside.
@@ -1841,13 +1858,13 @@ class TestRollingOLSEWMA:
         shrinkage_ratios = {}
         for W in [20, 60]:
             ridge = (
-                RollingOLS(window=W, lambda_=lam, dtype="float64", mode="batched")
+                RollingOLS(window=W, lambda_=lam, precision="double", mode="batched")
                 .fit_transform(factors, assets)
                 .get_beta("f")["a"]
                 .dropna()
             )
             ols = (
-                RollingOLS(window=W, dtype="float64", mode="batched")
+                RollingOLS(window=W, precision="double", mode="batched")
                 .fit_transform(factors, assets)
                 .get_beta("f")["a"]
                 .dropna()
@@ -1878,11 +1895,11 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame({"f": f})
         assets = pd.DataFrame({"a": a})
 
-        r_eq = RollingOLS(window=W, min_periods=mp, dtype="float64", mode="batched").fit_transform(
-            factors, assets
-        )
+        r_eq = RollingOLS(
+            window=W, min_periods=mp, precision="double", mode="batched"
+        ).fit_transform(factors, assets)
         r_ew = RollingOLS(
-            window=W, min_periods=mp, ewma_halflife=8, dtype="float64", mode="batched"
+            window=W, min_periods=mp, ewma_halflife=8, precision="double", mode="batched"
         ).fit_transform(factors, assets)
 
         nan_eq = r_eq.get_beta("f")["a"].isna()
@@ -1908,11 +1925,11 @@ class TestRollingOLSEWMA:
         factors = pd.DataFrame({"f": f})
         assets = pd.DataFrame({"a": y})
 
-        r_eq = RollingOLS(window=W, hac_lags=lags, dtype="float64", mode="batched").fit_transform(
-            factors, assets
-        )
+        r_eq = RollingOLS(
+            window=W, hac_lags=lags, precision="double", mode="batched"
+        ).fit_transform(factors, assets)
         r_ew = RollingOLS(
-            window=W, hac_lags=lags, ewma_halflife=hl, dtype="float64", mode="batched"
+            window=W, hac_lags=lags, ewma_halflife=hl, precision="double", mode="batched"
         ).fit_transform(factors, assets)
 
         se_eq = r_eq.get_se("f")["a"].dropna()
@@ -1944,7 +1961,7 @@ class TestRollingOLSEWMA:
         assets = pd.DataFrame(rng.normal(size=(T, 1)), columns=["a"])
 
         result = RollingOLS(
-            window=W, ewma_halflife=1, dtype="float64", mode="batched"
+            window=W, ewma_halflife=1, precision="double", mode="batched"
         ).fit_transform(factors, assets)
         beta = result.get_beta("f")["a"]
         valid = beta.dropna()
@@ -2002,7 +2019,7 @@ class TestRollingOLSEdgeCases:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, dtype="float32", mode="batched")
+        ols = RollingOLS(window=20, precision="mixed", mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result is not None
@@ -2014,7 +2031,7 @@ class TestRollingOLSEdgeCases:
         factors = pd.DataFrame(np.random.randn(T, 2), columns=["f1", "f2"])
         assets = pd.DataFrame(np.random.randn(T, 2), columns=["a1", "a2"])
 
-        ols = RollingOLS(window=20, dtype="float64", mode="batched")
+        ols = RollingOLS(window=20, precision="double", mode="batched")
         result = ols.fit_transform(factors, assets)
 
         assert result is not None
@@ -2074,7 +2091,7 @@ class TestEstimationCadence:
         "lambda_": 0.03,
         "ewma_halflife": 8,
         "hac_lags": 3,
-        "dtype": "float64",
+        "precision": "double",
     }
 
     @pytest.mark.parametrize("estimate_every", [5, 21, "W-FRI", "ME"])
@@ -2335,10 +2352,10 @@ class TestRollingOLSBatchedVsJoint:
         assets = pd.DataFrame(rng.standard_normal((W, 2)), index=idx, columns=["a1", "a2"])
         # No intercept, float64: the orthogonality is exact, so batched == joint.
         r_batched = RollingOLS(
-            window=W, min_periods=W, mode="batched", fit_intercept=False, dtype="float64"
+            window=W, min_periods=W, mode="batched", fit_intercept=False, precision="double"
         ).fit_transform(factors, assets)
         r_joint = RollingOLS(
-            window=W, min_periods=W, mode="joint", fit_intercept=False, dtype="float64"
+            window=W, min_periods=W, mode="joint", fit_intercept=False, precision="double"
         ).fit_transform(factors, assets)
         for fac in ["f1", "f2", "f3"]:
             b = r_batched.get_beta(fac).dropna().values
@@ -2528,9 +2545,9 @@ class TestRidgeEffectiveDof:
         factors, controls, targets = self._simple_panel()
         W = 20
         n_params = 3  # intercept + 1 control + 1 factor
-        result = RollingOLS(window=W, min_periods=W, dtype="float64", mode="batched").fit_transform(
-            factors, targets, controls=controls
-        )
+        result = RollingOLS(
+            window=W, min_periods=W, precision="double", mode="batched"
+        ).fit_transform(factors, targets, controls=controls)
         dof = result.get_dof("f").dropna()
         n_used = result.get_n_used("f").dropna()
         # Under equal weighting n_eff == n_used == W.
@@ -2546,10 +2563,10 @@ class TestRidgeEffectiveDof:
         factors, controls, targets = self._simple_panel()
         W = 20
         ols_result = RollingOLS(
-            window=W, min_periods=W, dtype="float64", mode="batched"
+            window=W, min_periods=W, precision="double", mode="batched"
         ).fit_transform(factors, targets, controls=controls)
         ridge_result = RollingOLS(
-            window=W, min_periods=W, lambda_=0.5, dtype="float64", mode="batched"
+            window=W, min_periods=W, lambda_=0.5, precision="double", mode="batched"
         ).fit_transform(factors, targets, controls=controls)
         ols_dof = ols_result.get_dof("f").dropna()
         ridge_dof = ridge_result.get_dof("f").dropna()
@@ -2568,7 +2585,7 @@ class TestRidgeEffectiveDof:
         prev_dof = None
         for lam in lambdas:
             result = RollingOLS(
-                window=W, min_periods=W, lambda_=lam, dtype="float64", mode="batched"
+                window=W, min_periods=W, lambda_=lam, precision="double", mode="batched"
             ).fit_transform(factors, targets, controls=controls)
             dof = result.get_dof("f").dropna()
             if prev_dof is not None:
@@ -2583,7 +2600,7 @@ class TestRidgeEffectiveDof:
         """adj_r2=True with Ridge uses df_eff, matching the scalar oracle."""
         factors, controls, targets = self._simple_panel(T=80)
         result = RollingOLS(
-            window=20, min_periods=15, lambda_=0.3, adj_r2=True, dtype="float64", mode="batched"
+            window=20, min_periods=15, lambda_=0.3, adj_r2=True, precision="double", mode="batched"
         ).fit_transform(factors, targets, controls=controls)
         expected = oracle_rolling(
             targets,
@@ -2611,10 +2628,10 @@ class TestRidgeEffectiveDof:
         targets = pd.DataFrame({"a": rng.normal(size=T)}, index=idx)
         n_params = 3  # intercept + 2 factors
         ols_result = RollingOLS(
-            window=W, min_periods=W, mode="joint", dtype="float64"
+            window=W, min_periods=W, mode="joint", precision="double"
         ).fit_transform(factors, targets)
         ridge_result = RollingOLS(
-            window=W, min_periods=W, lambda_=0.5, mode="joint", dtype="float64"
+            window=W, min_periods=W, lambda_=0.5, mode="joint", precision="double"
         ).fit_transform(factors, targets)
         ols_dof = ols_result.get_dof("f1").dropna()
         ridge_dof = ridge_result.get_dof("f1").dropna()

@@ -265,12 +265,12 @@ class TestIntegrationStatisticalProperties:
         assets = pd.DataFrame({"asset": 3.0 + 2.0 * factor_values})
 
         beta_ols = (
-            RollingOLS(window=30, lambda_=0.0, dtype="float64", mode="batched")
+            RollingOLS(window=30, lambda_=0.0, precision="double", mode="batched")
             .fit_transform(factors, assets)
             .get_beta("factor")
         )
         beta_ridge = (
-            RollingOLS(window=30, lambda_=1000.0, dtype="float64", mode="batched")
+            RollingOLS(window=30, lambda_=1000.0, precision="double", mode="batched")
             .fit_transform(factors, assets)
             .get_beta("factor")
         )

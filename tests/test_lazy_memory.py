@@ -72,7 +72,7 @@ def test_lazy_accessors_match_eager_fwl_outputs() -> None:
         ewma_halflife=halflife,
         adj_r2=True,
         hac_lags=2,
-        dtype="float64",
+        precision="double",
         mode="batched",
     ).fit_transform(factors, targets, controls, return_control_betas=True)
 
@@ -169,7 +169,7 @@ def test_lazy_accessors_match_eager_joint_ridge_outputs() -> None:
         lambda_=0.05,
         penalize_controls=True,
         hac_lags=2,
-        dtype="float64",
+        precision="double",
         mode="batched",
     )
     result = model.fit_transform(factors, targets, controls, return_control_betas=True)
@@ -261,7 +261,7 @@ def test_full_and_partial_r2_contract_with_controls() -> None:
     controls = pd.DataFrame({"control": control}, index=index)
     factors = pd.DataFrame({"factor": factor}, index=index)
     targets = pd.DataFrame({"asset": target}, index=index)
-    result = RollingOLS(window=20, dtype="float64", mode="batched").fit_transform(
+    result = RollingOLS(window=20, precision="double", mode="batched").fit_transform(
         factors, targets, controls
     )
     oracle = oracle_rolling(targets, factors, controls, window=20, min_periods=20, expanding=False)
@@ -289,9 +289,9 @@ def test_full_and_partial_r2_contract_with_controls() -> None:
 
 def test_r2_reconstructs_from_pattern_sufficient_statistics() -> None:
     targets, factors, controls = _small_panel(n_factors=2)
-    result = RollingOLS(window=14, min_periods=10, dtype="float64", mode="batched").fit_transform(
-        factors, targets, controls
-    )
+    result = RollingOLS(
+        window=14, min_periods=10, precision="double", mode="batched"
+    ).fit_transform(factors, targets, controls)
     actual = result.get_r2("f0").to_numpy()
     beta = result.get_beta("f0").to_numpy()
 
@@ -314,7 +314,7 @@ def test_r2_reconstructs_from_pattern_sufficient_statistics() -> None:
 
 def test_ewma_adjusted_r2_uses_effective_not_raw_sample_size() -> None:
     targets, factors, controls = _small_panel(n_factors=1, n_controls=1)
-    options = dict(window=18, min_periods=12, ewma_halflife=3, dtype="float64")
+    options = dict(window=18, min_periods=12, ewma_halflife=3, precision="double")
     adjusted = RollingOLS(adj_r2=True, **options, mode="batched").fit_transform(
         factors, targets, controls
     )
@@ -350,9 +350,9 @@ def test_factor_specific_missingness_matches_oracle() -> None:
     targets, factors, controls = _small_panel(n_factors=2)
     factors.iloc[8:13, 0] = np.nan
     factors.iloc[24:30, 1] = np.nan
-    result = RollingOLS(window=16, min_periods=10, dtype="float64", mode="batched").fit_transform(
-        factors, targets, controls
-    )
+    result = RollingOLS(
+        window=16, min_periods=10, precision="double", mode="batched"
+    ).fit_transform(factors, targets, controls)
     oracle = oracle_rolling(targets, factors, controls, window=16, min_periods=10, expanding=False)
 
     getter_by_quantity = {
@@ -416,7 +416,7 @@ def test_asset_subsetting_and_iterators() -> None:
 
 def test_estimate_memory_matches_persistent_small_result() -> None:
     targets, factors, controls = _small_panel(n_observations=60, n_targets=8, n_factors=4)
-    model = RollingOLS(window=18, min_periods=12, dtype="float64", mode="batched")
+    model = RollingOLS(window=18, min_periods=12, precision="double", mode="batched")
     estimate = model.estimate_memory(targets, factors, controls)
     result = model.fit_transform(factors, targets, controls)
     primary_bytes = sum(
@@ -447,7 +447,7 @@ def test_residual_iteration_has_bounded_live_cache() -> None:
         n_factors=6,
         n_controls=2,
     )
-    result = RollingOLS(window=60, cache_size=1, dtype="float64", mode="batched").fit_transform(
+    result = RollingOLS(window=60, cache_size=1, precision="double", mode="batched").fit_transform(
         factors, targets, controls
     )
     frame_bytes = len(targets) * targets.shape[1] * np.dtype(np.float64).itemsize
@@ -471,7 +471,7 @@ def test_se_iteration_streams_endpoints_with_bounded_memory() -> None:
         n_controls=2,
     )
     result = RollingOLS(
-        window=40, hac_lags=3, cache_size=1, dtype="float64", mode="batched"
+        window=40, hac_lags=3, cache_size=1, precision="double", mode="batched"
     ).fit_transform(factors, targets, controls)
     frame_bytes = len(targets) * targets.shape[1] * np.dtype(np.float64).itemsize
     tracemalloc.start()

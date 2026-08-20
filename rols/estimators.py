@@ -158,7 +158,7 @@ def _solve_batch(XtX: np.ndarray, XtY: np.ndarray, warn_singular: bool = True) -
     summarizing how many windows were singular.
     """
     n, k, N = XtY.shape
-    betas = np.full((n, k, N), np.nan)
+    betas = np.full((n, k, N), np.nan, dtype=XtY.dtype)
     n_singular = 0
     try:
         result = np.linalg.solve(XtX, XtY)
@@ -230,7 +230,7 @@ def _effective_sample_size(weights: np.ndarray) -> float:
 
 def _sqrt_hac_variances(variances: np.ndarray) -> tuple[np.ndarray, int]:
     """Take guarded square roots and count finite non-positive variances."""
-    standard_errors = np.full(variances.shape, np.nan)
+    standard_errors = np.full(variances.shape, np.nan, dtype=variances.dtype)
     invalid_variance = np.isfinite(variances) & (variances <= 0)
     positive_variance = np.isfinite(variances) & (variances > 0)
     standard_errors[positive_variance] = np.sqrt(np.maximum(variances[positive_variance], 0.0))
@@ -246,15 +246,16 @@ def _factor_hac_standard_errors(
     n_eff: float,
     n_lags: int,
     denom_tol: float,
+    compute_dtype: type[np.floating] = np.float64,
 ) -> tuple[np.ndarray, bool, int]:
     """Return current-window HAC SEs for the final slope in solve coordinates."""
     n_observations, n_parameters = solve_design.shape
-    standard_errors = np.full(residuals.shape[1], np.nan)
+    standard_errors = np.full(residuals.shape[1], np.nan, dtype=compute_dtype)
     if n_lags >= n_observations or n_eff <= n_parameters:
         return standard_errors, False, 0
 
     try:
-        inverse_bread = np.linalg.solve(bread, np.eye(n_parameters))
+        inverse_bread = np.linalg.solve(bread, np.eye(n_parameters, dtype=compute_dtype))
     except np.linalg.LinAlgError:
         return standard_errors, True, 0
     factor_inverse_row = inverse_bread[-1]
@@ -301,6 +302,7 @@ def _solve_joint_window_block(
     hac_lags: int | None = None,
     denom_tol: float = 0.0,
     return_hac_residuals: bool = False,
+    compute_dtype: type[np.floating] = np.float64,
 ) -> tuple[JointWindowResult | None, bool]:
     """Solve one complete-case window for a block of identically masked targets."""
     n_used = int(complete_case.sum())
@@ -310,7 +312,7 @@ def _solve_joint_window_block(
     complete_targets = targets[complete_case]
     complete_design = design[complete_case]
     if weights is None:
-        complete_weights = np.full(n_used, 1.0 / n_used)
+        complete_weights = np.full(n_used, 1.0 / n_used, dtype=compute_dtype)
     else:
         complete_weights = weights[complete_case]
         weight_sum = complete_weights.sum()
@@ -321,8 +323,8 @@ def _solve_joint_window_block(
     penalty_diagonal = np.diag(penalty)
     penalized_columns = np.flatnonzero(penalty_diagonal > 0)
     solve_design = complete_design.copy()
-    means = np.zeros(solve_design.shape[1])
-    scales = np.ones(solve_design.shape[1])
+    means = np.zeros(solve_design.shape[1], dtype=compute_dtype)
+    scales = np.ones(solve_design.shape[1], dtype=compute_dtype)
     for column in penalized_columns:
         values = solve_design[:, column]
         if fit_intercept:
@@ -332,7 +334,7 @@ def _solve_joint_window_block(
         else:
             scale_squared = np.sum(complete_weights * values**2)
         scales[column] = np.sqrt(scale_squared)
-        if not np.isfinite(scales[column]) or scales[column] <= np.finfo(float).eps:
+        if not np.isfinite(scales[column]) or scales[column] <= np.finfo(compute_dtype).eps:
             return None, False
         solve_design[:, column] /= scales[column]
 
@@ -344,7 +346,10 @@ def _solve_joint_window_block(
     if np.any(penalty):
         augmented_design = np.vstack([weighted_design, np.diag(np.sqrt(np.diag(penalty)))])
         augmented_targets = np.vstack(
-            [weighted_targets, np.zeros((solve_design.shape[1], targets.shape[1]))]
+            [
+                weighted_targets,
+                np.zeros((solve_design.shape[1], targets.shape[1]), dtype=compute_dtype),
+            ]
         )
     else:
         augmented_design = weighted_design
@@ -381,7 +386,7 @@ def _solve_joint_window_block(
         )
     else:
         sst = np.sum(complete_weights[:, None] * complete_targets**2, axis=0)
-    endpoint_residual = np.full(targets.shape[1], np.nan)
+    endpoint_residual = np.full(targets.shape[1], np.nan, dtype=compute_dtype)
     if complete_case[-1]:
         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
             endpoint_residual = targets[-1] - design[-1] @ parameters
@@ -404,6 +409,7 @@ def _solve_joint_window_block(
             n_eff=n_eff,
             n_lags=hac_lags,
             denom_tol=denom_tol,
+            compute_dtype=compute_dtype,
         )
     result = JointWindowResult(
         parameters=parameters,
@@ -433,6 +439,7 @@ def rolling_joint_solve(
     warn_singular: bool = True,
     cond_warn_threshold: float = 1e10,
     endpoint_positions: np.ndarray | None = None,
+    compute_dtype: type[np.floating] = np.float64,
 ) -> JointFitResult:
     """Fit one current-window joint model per endpoint and target.
 
@@ -454,12 +461,12 @@ def rolling_joint_solve(
     if not np.isfinite(cond_warn_threshold) or cond_warn_threshold <= 0:
         raise ValueError("cond_warn_threshold must be finite and positive")
 
-    target_values = y.to_numpy(dtype=np.float64)
-    regressor_values = X.to_numpy(dtype=np.float64)
+    target_values = y.to_numpy(dtype=compute_dtype)
+    regressor_values = X.to_numpy(dtype=compute_dtype)
     n_observations, n_targets = target_values.shape
     n_slopes = regressor_values.shape[1]
     design = (
-        np.column_stack([np.ones(n_observations), regressor_values])
+        np.column_stack([np.ones(n_observations, dtype=compute_dtype), regressor_values])
         if fit_intercept
         else regressor_values
     )
@@ -471,9 +478,9 @@ def rolling_joint_solve(
     )
 
     if penalty is None:
-        penalty_matrix = np.zeros((n_parameters, n_parameters), dtype=np.float64)
+        penalty_matrix = np.zeros((n_parameters, n_parameters), dtype=compute_dtype)
     else:
-        penalty_matrix = np.asarray(penalty, dtype=np.float64)
+        penalty_matrix = np.asarray(penalty, dtype=compute_dtype)
         if penalty_matrix.shape != (n_parameters, n_parameters):
             raise ValueError(f"penalty must have shape ({n_parameters}, {n_parameters})")
         if not np.isfinite(penalty_matrix).all():
@@ -489,7 +496,7 @@ def rolling_joint_solve(
 
     supplied_weights = None
     if weights is not None:
-        supplied_weights = np.asarray(weights, dtype=np.float64)
+        supplied_weights = np.asarray(weights, dtype=compute_dtype)
         if supplied_weights.shape != (window,):
             raise ValueError(f"weights must have shape ({window},)")
         if not np.isfinite(supplied_weights).all() or (supplied_weights < 0).any():
@@ -497,14 +504,14 @@ def rolling_joint_solve(
         if supplied_weights.sum() <= 0:
             raise ValueError("weights must have positive sum")
 
-    coef = np.full((output_size, n_slopes, n_targets), np.nan)
-    intercept = np.full((output_size, n_targets), np.nan)
-    resid_endpoint = np.full((output_size, n_targets), np.nan)
-    ssr = np.full((output_size, n_targets), np.nan)
-    sst = np.full((output_size, n_targets), np.nan)
-    n_used = np.full((output_size, n_targets), np.nan)
-    n_eff = np.full((output_size, n_targets), np.nan)
-    df_eff_out = np.full((output_size, n_targets), np.nan)
+    coef = np.full((output_size, n_slopes, n_targets), np.nan, dtype=compute_dtype)
+    intercept = np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
+    resid_endpoint = np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
+    ssr = np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
+    sst = np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
+    n_used = np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
+    n_eff = np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
+    df_eff_out = np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
 
     def store_block(
         endpoint: int,
@@ -554,6 +561,7 @@ def rolling_joint_solve(
                 endpoint_weights,
                 penalty_matrix,
                 cond_warn_threshold,
+                compute_dtype=compute_dtype,
             )
             group_size = grouped_targets.size
             ill_conditioned_count += int(ill_conditioned) * group_size
@@ -582,15 +590,15 @@ def rolling_joint_solve(
             design_windows = all_design_windows[full_window_offsets]
             target_windows = all_target_windows[full_window_offsets]
         window_weights = (
-            np.full(window, 1.0 / window)
+            np.full(window, 1.0 / window, dtype=compute_dtype)
             if supplied_weights is None
             else supplied_weights / supplied_weights.sum()
         )
         penalty_diagonal = np.diag(penalty_matrix)
         penalized_columns = np.flatnonzero(penalty_diagonal > 0)
         solve_design_windows = design_windows.copy()
-        means = np.zeros((solve_design_windows.shape[0], n_parameters))
-        scales = np.ones((solve_design_windows.shape[0], n_parameters))
+        means = np.zeros((solve_design_windows.shape[0], n_parameters), dtype=compute_dtype)
+        scales = np.ones((solve_design_windows.shape[0], n_parameters), dtype=compute_dtype)
         for column in penalized_columns:
             values = solve_design_windows[:, :, column]
             if fit_intercept:
@@ -626,7 +634,10 @@ def rolling_joint_solve(
             augmented_targets = np.concatenate(
                 [
                     weighted_target_windows,
-                    np.zeros((target_windows.shape[0], n_parameters, target_windows.shape[2])),
+                    np.zeros(
+                        (target_windows.shape[0], n_parameters, target_windows.shape[2]),
+                        dtype=compute_dtype,
+                    ),
                 ],
                 axis=1,
             )
@@ -648,7 +659,7 @@ def rolling_joint_solve(
         q, r = np.linalg.qr(augmented_design, mode="reduced")
         projected_targets = np.einsum("twk,twn->tkn", q, augmented_targets)
         safe_r = r.copy()
-        safe_r[~valid_windows] = np.eye(n_parameters)
+        safe_r[~valid_windows] = np.eye(n_parameters, dtype=compute_dtype)
         solve_parameters = np.linalg.solve(safe_r, projected_targets)
         solve_parameters[~valid_windows] = np.nan
         parameters = solve_parameters / safe_scales[:, :, None]
@@ -670,9 +681,9 @@ def rolling_joint_solve(
         # LinAlgError; their output is overwritten with NaN afterward.
         A_batch = design_gram + penalty_matrix[None, :, :]  # (T, p, p)
         safe_A_batch = A_batch.copy()
-        safe_A_batch[~valid_windows] = np.eye(n_parameters)
+        safe_A_batch[~valid_windows] = np.eye(n_parameters, dtype=compute_dtype)
         safe_gram_for_df = design_gram.copy()
-        safe_gram_for_df[~valid_windows] = np.eye(n_parameters)
+        safe_gram_for_df[~valid_windows] = np.eye(n_parameters, dtype=compute_dtype)
         invA_gram = np.linalg.solve(safe_A_batch, safe_gram_for_df)  # (T, p, p)
         df_eff_windows = np.trace(invA_gram, axis1=1, axis2=2).copy()  # (T,)
         df_eff_windows[~valid_windows] = np.nan
@@ -779,6 +790,7 @@ def rolling_fwl_solve(
     return_nuisance_coef: bool = True,
     residuals_only: bool = False,
     endpoint_positions: np.ndarray | None = None,
+    compute_dtype: type[np.floating] = np.float64,
 ) -> BatchedFitResult:
     """Fit independent factors by exact within-window FWL projection.
 
@@ -809,15 +821,17 @@ def rolling_fwl_solve(
         ),
         dtype=np.intp,
     )
-    target_values = y.iloc[:, canonical_target_order].to_numpy(dtype=np.float64)
-    factor_values = factors.to_numpy(dtype=np.float64)
+    target_values = y.iloc[:, canonical_target_order].to_numpy(dtype=compute_dtype)
+    factor_values = factors.to_numpy(dtype=compute_dtype)
     control_values = (
-        np.empty((len(y), 0), dtype=np.float64)
+        np.empty((len(y), 0), dtype=compute_dtype)
         if controls is None
-        else controls.to_numpy(dtype=np.float64)
+        else controls.to_numpy(dtype=compute_dtype)
     )
     nuisance_values = (
-        np.column_stack([np.ones(len(y)), control_values]) if fit_intercept else control_values
+        np.column_stack([np.ones(len(y), dtype=compute_dtype), control_values])
+        if fit_intercept
+        else control_values
     )
     n_observations, n_targets = target_values.shape
     n_factors = factor_values.shape[1]
@@ -830,7 +844,7 @@ def rolling_fwl_solve(
 
     supplied_weights = None
     if weights is not None:
-        supplied_weights = np.asarray(weights, dtype=np.float64)
+        supplied_weights = np.asarray(weights, dtype=compute_dtype)
         if supplied_weights.shape != (window,):
             raise ValueError(f"weights must have shape ({window},)")
         if not np.isfinite(supplied_weights).all() or (supplied_weights < 0).any():
@@ -839,20 +853,24 @@ def rolling_fwl_solve(
             raise ValueError("weights must have positive sum")
 
     shape = (output_size, n_factors, n_targets)
-    factor_coef = None if residuals_only else np.full(shape, np.nan)
-    intercept = None if residuals_only else np.full(shape, np.nan)
-    n_used = None if residuals_only or params_only else np.full(shape, np.nan)
-    resid_endpoint = np.full(shape, np.nan) if residuals_only or not params_only else None
-    ssr = None if params_only else np.full(shape, np.nan)
-    sst = None if params_only else np.full(shape, np.nan)
-    reduced_ssr = None if params_only else np.full(shape, np.nan)
-    n_eff = None if params_only else np.full(shape, np.nan)
+    factor_coef = None if residuals_only else np.full(shape, np.nan, dtype=compute_dtype)
+    intercept = None if residuals_only else np.full(shape, np.nan, dtype=compute_dtype)
+    n_used = None if residuals_only or params_only else np.full(shape, np.nan, dtype=compute_dtype)
+    resid_endpoint = (
+        np.full(shape, np.nan, dtype=compute_dtype) if residuals_only or not params_only else None
+    )
+    ssr = None if params_only else np.full(shape, np.nan, dtype=compute_dtype)
+    sst = None if params_only else np.full(shape, np.nan, dtype=compute_dtype)
+    reduced_ssr = None if params_only else np.full(shape, np.nan, dtype=compute_dtype)
+    n_eff = None if params_only else np.full(shape, np.nan, dtype=compute_dtype)
     nuisance_coef = (
-        np.full((output_size, n_factors, n_controls, n_targets), np.nan)
+        np.full((output_size, n_factors, n_controls, n_targets), np.nan, dtype=compute_dtype)
         if return_nuisance_coef
         else None
     )
-    nuisance_resid_endpoint = None if params_only else np.full((output_size, n_targets), np.nan)
+    nuisance_resid_endpoint = (
+        None if params_only else np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
+    )
     sufficient_statistics: list[PatternSufficientStatistics] = []
     n_singular = 0
     n_ill_conditioned = 0
@@ -889,7 +907,9 @@ def rolling_fwl_solve(
                 complete_factors = window_factors[complete_case][:, factor_positions]
                 complete_nuisance = window_nuisance[complete_case]
                 if endpoint_weights is None:
-                    complete_weights = np.full(observations_used, 1.0 / observations_used)
+                    complete_weights = np.full(
+                        observations_used, 1.0 / observations_used, dtype=compute_dtype
+                    )
                 else:
                     complete_weights = endpoint_weights[complete_case]
                     weight_sum = complete_weights.sum()
@@ -926,8 +946,8 @@ def rolling_fwl_solve(
                 else:
                     target_residuals = weighted_targets
                     factor_residuals = weighted_factors
-                    nuisance_target_coef = np.empty((0, target_positions.size))
-                    nuisance_factor_coef = np.empty((0, factor_positions.size))
+                    nuisance_target_coef = np.empty((0, target_positions.size), dtype=compute_dtype)
+                    nuisance_factor_coef = np.empty((0, factor_positions.size), dtype=compute_dtype)
 
                 nuisance_complete_case = target_mask & nuisance_validity
                 if (
@@ -935,7 +955,7 @@ def rolling_fwl_solve(
                     and complete_case[-1]
                     and np.array_equal(complete_case, nuisance_complete_case)
                 ):
-                    nuisance_endpoint_fit = np.zeros(target_positions.size)
+                    nuisance_endpoint_fit = np.zeros(target_positions.size, dtype=compute_dtype)
                     if weighted_nuisance.shape[1]:
                         with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
                             nuisance_endpoint_fit = complete_nuisance[-1] @ nuisance_target_coef
@@ -947,7 +967,7 @@ def rolling_fwl_solve(
                 n_nuisance = weighted_nuisance.shape[1]
                 design_grams = np.zeros(
                     (n_group_factors, n_nuisance + 1, n_nuisance + 1),
-                    dtype=np.float64,
+                    dtype=compute_dtype,
                 )
                 if n_nuisance:
                     with np.errstate(divide="ignore", over="ignore", invalid="ignore"):
@@ -959,7 +979,7 @@ def rolling_fwl_solve(
                 design_grams[:, -1, -1] = np.sum(weighted_factors**2, axis=0)
                 condition_numbers = np.linalg.cond(design_grams)
                 rank_condition_limit = (
-                    1.0 / (max(observations_used, n_nuisance + 1) * np.finfo(np.float64).eps)
+                    1.0 / (max(observations_used, n_nuisance + 1) * np.finfo(compute_dtype).eps)
                 ) ** 2
                 valid_factors = np.isfinite(condition_numbers) & (
                     condition_numbers < rank_condition_limit
@@ -1137,7 +1157,7 @@ def _residualize_single(
     (resid_col, n_singular) : (T,) array of residuals (NaN where insufficient
         clean data or the solve was singular) and the count of singular windows.
     """
-    resid_col = np.full(T, np.nan)
+    resid_col = np.full(T, np.nan, dtype=y_col.dtype)
     n_singular = 0
     n_windows = T - window + 1
 
@@ -1215,6 +1235,7 @@ def rolling_residualize(
     ridge_lambda: float = 0.0,
     warn_singular: bool = True,
     weights: np.ndarray | None = None,
+    compute_dtype: type[np.floating] = np.float64,
 ) -> pd.DataFrame:
     """
     Compute rolling OLS (or Ridge) residuals: y_t - X_t @ beta_t for each t.
@@ -1282,12 +1303,12 @@ def rolling_residualize(
     assert y.index.equals(X.index), "y and X must have identical indexes"
     if weights is not None and expanding:
         raise ValueError("weights are not supported with expanding=True")
-    y_np = y.to_numpy(dtype=np.float64)
-    X_np = X.to_numpy(dtype=np.float64)
+    y_np = y.to_numpy(dtype=compute_dtype)
+    X_np = X.to_numpy(dtype=compute_dtype)
     T, N = y_np.shape
     k = X_np.shape[1]
-    resid = np.full((T, N), np.nan)
-    ridge_term = ridge_lambda * np.eye(k)
+    resid = np.full((T, N), np.nan, dtype=compute_dtype)
+    ridge_term = ridge_lambda * np.eye(k, dtype=compute_dtype)
     n_singular = 0
 
     if expanding:
@@ -1338,7 +1359,7 @@ def rolling_residualize(
             XtY = np.einsum("twi,twn->tin", Xw, yw)
         XtX[valid] += ridge_term
 
-        betas = np.full((n_windows, k, N), np.nan)
+        betas = np.full((n_windows, k, N), np.nan, dtype=compute_dtype)
         if valid.any():
             # _solve_batch emits its own aggregated warning for the batch.
             betas[valid] = _solve_batch(XtX[valid], XtY[valid], warn_singular=warn_singular)
@@ -1414,7 +1435,7 @@ def rolling_residualize(
                 XtY_j = np.einsum("twi,tw->ti", Xw_masked, yw_masked)[:, :, None]
             XtX_j[sufficient] += ridge_term
 
-            betas_j = np.full((n_windows, k, 1), np.nan)
+            betas_j = np.full((n_windows, k, 1), np.nan, dtype=compute_dtype)
             # Aggregate the singular warning once for the whole call rather than
             # emitting one per asset.
             betas_j[sufficient] = _solve_batch(
@@ -1496,6 +1517,7 @@ def rolling_hac_se(
     denom_tol: float = 1e-12,
     warn_invalid: bool = True,
     endpoint_positions: np.ndarray | None = None,
+    compute_dtype: type[np.floating] = np.float64,
 ) -> pd.DataFrame:
     """Compute factor HAC SEs from each endpoint's own current-window fit.
 
@@ -1521,8 +1543,8 @@ def rolling_hac_se(
     if not np.isfinite(denom_tol) or denom_tol < 0:
         raise ValueError("denom_tol must be finite and non-negative")
 
-    target_values = y.to_numpy(dtype=np.float64)
-    regressor_values = X.to_numpy(dtype=np.float64)
+    target_values = y.to_numpy(dtype=compute_dtype)
+    regressor_values = X.to_numpy(dtype=compute_dtype)
     n_observations, n_targets = target_values.shape
     selected_endpoints, output_positions, output_size = _selected_endpoint_pairs(
         endpoint_positions,
@@ -1530,7 +1552,7 @@ def rolling_hac_se(
         min_periods,
     )
     design = (
-        np.column_stack([np.ones(n_observations), regressor_values])
+        np.column_stack([np.ones(n_observations, dtype=compute_dtype), regressor_values])
         if fit_intercept
         else regressor_values
     )
@@ -1539,9 +1561,9 @@ def rolling_hac_se(
         raise ValueError("X must contain at least one factor column")
 
     if penalty is None:
-        penalty_matrix = np.zeros((n_parameters, n_parameters), dtype=np.float64)
+        penalty_matrix = np.zeros((n_parameters, n_parameters), dtype=compute_dtype)
     else:
-        penalty_matrix = np.asarray(penalty, dtype=np.float64)
+        penalty_matrix = np.asarray(penalty, dtype=compute_dtype)
         if penalty_matrix.shape != (n_parameters, n_parameters):
             raise ValueError(f"penalty must have shape ({n_parameters}, {n_parameters})")
         if not np.isfinite(penalty_matrix).all():
@@ -1557,7 +1579,7 @@ def rolling_hac_se(
 
     supplied_weights = None
     if weights is not None:
-        supplied_weights = np.asarray(weights, dtype=np.float64)
+        supplied_weights = np.asarray(weights, dtype=compute_dtype)
         if supplied_weights.shape != (window,):
             raise ValueError(f"weights must have shape ({window},)")
         if not np.isfinite(supplied_weights).all() or (supplied_weights < 0).any():
@@ -1565,7 +1587,7 @@ def rolling_hac_se(
         if supplied_weights.sum() <= 0:
             raise ValueError("weights must have positive sum")
 
-    standard_errors = np.full((output_size, n_targets), np.nan)
+    standard_errors = np.full((output_size, n_targets), np.nan, dtype=compute_dtype)
     n_invalid_bread = 0
     n_invalid_variance = 0
     for endpoint, output_position in zip(
@@ -1596,6 +1618,7 @@ def rolling_hac_se(
                 cond_warn_threshold=np.inf,
                 hac_lags=n_lags,
                 denom_tol=denom_tol,
+                compute_dtype=compute_dtype,
             )
             if solved is None:
                 n_invalid_bread += target_positions.size

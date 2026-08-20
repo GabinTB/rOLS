@@ -38,6 +38,9 @@ class RollingOLSResult:
     expanding: bool
     hac_lags: int | None
     mode: str = "batched"
+    precision: str = "double"
+    storage_dtype: np.dtype = field(default_factory=lambda: np.dtype(np.float64))
+    compute_dtype: np.dtype = field(default_factory=lambda: np.dtype(np.float64))
     cache_size: int = 1
     estimated_positions: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.intp))
 

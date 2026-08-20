@@ -122,7 +122,7 @@ class TestJointSolverConditioning:
             window=40,
             min_periods=40,
             fit_intercept=False,
-            dtype="float64",
+            precision="double",
             asset_chunk_size=1,
             cond_warn_threshold=1e10,
             mode="batched",

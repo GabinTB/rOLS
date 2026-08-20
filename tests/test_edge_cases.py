@@ -80,9 +80,9 @@ class TestAllNaNInputs:
 class TestBoundaryWindowSizes:
     def test_window_one_produces_exact_interpolation(self):
         factors, _, targets = _panel(10)
-        result = RollingOLS(window=1, min_periods=1, dtype="float64", mode="batched").fit_transform(
-            factors, targets
-        )
+        result = RollingOLS(
+            window=1, min_periods=1, precision="double", mode="batched"
+        ).fit_transform(factors, targets)
         # With window=1 and an intercept, a single point is fit exactly:
         # residual is 0 everywhere a point exists (n_used=1 -> perfectly
         # collinear system with the intercept, coefficient is degenerate/NaN
@@ -92,9 +92,9 @@ class TestBoundaryWindowSizes:
 
     def test_window_two_min_periods_one(self):
         factors, _, targets = _panel(15)
-        result = RollingOLS(window=2, min_periods=1, dtype="float64", mode="batched").fit_transform(
-            factors, targets
-        )
+        result = RollingOLS(
+            window=2, min_periods=1, precision="double", mode="batched"
+        ).fit_transform(factors, targets)
         beta = result.get_beta("f0")
         assert not np.isinf(beta.to_numpy()).any()
 
@@ -129,7 +129,7 @@ class TestBoundaryWindowSizes:
 class TestSingletonDimensions:
     def test_single_target_single_factor_single_control(self):
         factors, controls, targets = _panel(40, n_factors=1, n_controls=1, n_targets=1)
-        result = RollingOLS(window=15, dtype="float64", mode="batched").fit_transform(
+        result = RollingOLS(window=15, precision="double", mode="batched").fit_transform(
             factors, targets, controls=controls, return_control_betas=True
         )
         assert result.get_beta("f0").shape == (40, 1)
@@ -160,7 +160,7 @@ class TestSingularAndDegenerateDesigns:
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            result = RollingOLS(window=window, dtype="float64", mode="batched").fit_transform(
+            result = RollingOLS(window=window, precision="double", mode="batched").fit_transform(
                 factors, targets
             )
 
@@ -177,7 +177,7 @@ class TestSingularAndDegenerateDesigns:
     def test_constant_target_gives_nan_r2_not_error(self):
         factors, _, targets = _panel(30)
         targets.iloc[:, 0] = 7.0
-        result = RollingOLS(window=10, dtype="float64", mode="batched").fit_transform(
+        result = RollingOLS(window=10, precision="double", mode="batched").fit_transform(
             factors, targets
         )
         r2 = result.get_r2("f0")
@@ -196,7 +196,7 @@ class TestSingularAndDegenerateDesigns:
         targets = pd.DataFrame({"a0": rng.normal(size=n_observations)}, index=index)
 
         with pytest.warns(RuntimeWarning, match="singular"):
-            result = RollingOLS(window=window, mode="joint", dtype="float64").fit_transform(
+            result = RollingOLS(window=window, mode="joint", precision="double").fit_transform(
                 factors, targets
             )
 
@@ -214,7 +214,7 @@ class TestSingularAndDegenerateDesigns:
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
-            result = RollingOLS(window=window, mode="joint", dtype="float64").fit_transform(
+            result = RollingOLS(window=window, mode="joint", precision="double").fit_transform(
                 factors, targets
             )
 
@@ -227,7 +227,7 @@ class TestRidgeExtremes:
         window = 20
         factors, _, targets = _panel(window, n_factors=1, seed=6)
         result = RollingOLS(
-            window=window, min_periods=window, lambda_=1e12, dtype="float64", mode="batched"
+            window=window, min_periods=window, lambda_=1e12, precision="double", mode="batched"
         ).fit_transform(factors, targets)
 
         beta = result.get_beta("f0").iloc[-1, 0]
@@ -249,7 +249,7 @@ class TestEWMAExtreme:
 
         factors, _, targets = _panel(40, n_factors=1, seed=7)
         result = RollingOLS(
-            window=window, min_periods=window, ewma_halflife=1, dtype="float64", mode="batched"
+            window=window, min_periods=window, ewma_halflife=1, precision="double", mode="batched"
         ).fit_transform(factors, targets)
         beta = result.get_beta("f0")
         assert np.isfinite(beta.to_numpy()[beta.notna().to_numpy()]).all()
@@ -260,7 +260,7 @@ class TestHACBoundaries:
         window = 25
         factors, _, targets = _panel(window, n_factors=1, seed=8)
         result = RollingOLS(
-            window=window, min_periods=window, hac_lags=0, dtype="float64", mode="batched"
+            window=window, min_periods=window, hac_lags=0, precision="double", mode="batched"
         ).fit_transform(factors, targets)
 
         se = result.get_se("f0").iloc[-1, 0]
@@ -280,7 +280,11 @@ class TestHACBoundaries:
         window = 15
         factors, _, targets = _panel(window * 2, n_factors=1, seed=9)
         result = RollingOLS(
-            window=window, min_periods=window, hac_lags=window + 5, dtype="float64", mode="batched"
+            window=window,
+            min_periods=window,
+            hac_lags=window + 5,
+            precision="double",
+            mode="batched",
         ).fit_transform(factors, targets)
 
         se = result.get_se("f0")
@@ -294,7 +298,7 @@ class TestCadenceBeyondSampleSize:
         window = 10
         factors, _, targets = _panel(n_observations, n_factors=1, seed=10)
         result = RollingOLS(
-            window=window, min_periods=window, estimate_every=50, dtype="float64", mode="batched"
+            window=window, min_periods=window, estimate_every=50, precision="double", mode="batched"
         ).fit_transform(factors, targets)
 
         beta = result.get_beta("f0")

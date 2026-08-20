@@ -193,7 +193,7 @@ def test_augmented_design_reference(
         fit_intercept=fit_intercept,
         ewma_halflife=ewma_halflife,
         hac_lags=n_lags,
-        dtype="float64",
+        precision="double",
     )
     result = model.fit_transform(factors, targets, controls=controls)
 
@@ -261,7 +261,7 @@ def test_rescaling_equivariance(lambda_: float, scale: float) -> None:
     scaled_factors = pd.DataFrame({"f": f * scale}, index=idx)
     targets = pd.DataFrame({"a": y}, index=idx)
 
-    kwargs = dict(window=W, min_periods=W, lambda_=lambda_, hac_lags=3, dtype="float64")
+    kwargs = dict(window=W, min_periods=W, lambda_=lambda_, hac_lags=3, precision="double")
     r_orig = RollingOLS(**kwargs).fit_transform(factors, targets)
     r_scaled = RollingOLS(**kwargs).fit_transform(scaled_factors, targets)
 
@@ -319,7 +319,7 @@ def test_ridge_coefficients_via_lstsq(n_controls: int, penalize_controls: bool) 
         lambda_=lambda_,
         penalize_controls=penalize_controls,
         fit_intercept=True,
-        dtype="float64",
+        precision="double",
     )
     result = model.fit_transform(factors, targets, controls=controls)
 
@@ -396,7 +396,7 @@ def test_statsmodels_wls_hac(n_lags: int, n_controls: int) -> None:
         lambda_=0.0,
         ewma_halflife=halflife,
         hac_lags=n_lags,
-        dtype="float64",
+        precision="double",
     )
     result = model.fit_transform(factors, targets.iloc[:, :1], controls=controls)
     rols_se = float(result.get_se("f").iloc[-1, 0])

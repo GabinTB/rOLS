@@ -150,11 +150,11 @@ for a runnable, end-to-end version covering `mode`, full vs partial R², and
 | `lag_signal` | `False` | Use `beta_{t-1} * factor_t` instead of `beta_t * factor_t` |
 | `hac_lags` | `None` | Newey-West lags for HAC SE. `None` disables HAC (`get_se`/`get_tstat` raise) |
 | `denom_tol` | `1e-12` | Threshold below which a variance/SST is treated as zero (NaN out, not `inf`) |
-| `dtype` | `"float32"` | DataFrame storage dtype (see [Precision](#precision-dtype)). Solve arithmetic is always float64 |
+| `precision` | `"double"` | Precision policy: `"double"` (float64/float64), `"mixed"` (float32 storage / float64 compute), `"single"` (float32/float32). See [Precision](#precision) |
 | `asset_chunk_size` | `100` | Targets processed per chunk during residualization; bounds peak memory |
 | `cache_size` | `1` | Factors retained in each on-demand result cache |
 | `warn_singular` | `True` | Warn once on singular or ill-conditioned windows (affected estimates become NaN, or become numerically unreliable but finite for ill-conditioning — see [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md)) |
-| `cond_warn_threshold` | `1e10` | Warn when `cond(X'X)` for a window's design exceeds this |
+| `cond_warn_threshold` | `None` | Warn when `cond(X'X)` exceeds this. Default: `1e10` (float64 compute) or `1e5` (float32 compute) |
 | `estimate_every` | `1` | Estimate only every `k`-th endpoint, or the last observation per pandas offset period — see [Sparse cadence](#sparse-cadence-estimate_every) |
 
 ---
@@ -567,15 +567,24 @@ the `structural` vs `scattered` NaN-pattern cases.
 
 ---
 
-## Precision (`dtype`)
+## Precision
 
-`dtype` controls the storage precision of the input and intermediate pandas
-DataFrames only. Internal matrix operations (gram matrix accumulation and the
-linear solve) always run in **float64** regardless of this setting, because
-`np.linalg.solve`/QR lose accuracy in float32 for ill-conditioned windows.
-`get_*` accessor outputs are likewise always float64 — `dtype` reduces input
-storage memory, it does not change the numerical precision or the output
-dtype of the regression itself.
+The `precision` parameter controls both storage and computation dtypes:
+
+| Mode | Storage dtype | Compute dtype | Use case |
+|---|---|---|---|
+| `"double"` (default) | float64 | float64 | Maximum numerical fidelity |
+| `"mixed"` | float32 | float64 | Halves memory for large panels while keeping full-precision numerics |
+| `"single"` | float32 | float32 | Smallest footprint; suitable when ~4-digit accuracy suffices |
+
+**Storage dtype** governs internally retained arrays, caches, and DataFrame
+storage. **Compute dtype** governs all numerical work: window extraction,
+complete-case processing, QR/lstsq, Ridge solves, HAC, and the
+`cond_warn_threshold` default (`1e10` for float64, `1e5` for float32).
+
+```python
+model = RollingOLS(window=60, precision="mixed")  # float32 storage, float64 compute
+```
 
 ---
 

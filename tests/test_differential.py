@@ -140,7 +140,7 @@ def _run_and_compare(
         mode=mode,
         ewma_halflife=ewma_halflife,
         estimate_every=cadence,
-        dtype="float64",
+        precision="double",
         warn_singular=False,
         warn_correlated_factors=False,
     )

@@ -242,12 +242,14 @@ class RollingOLS:
         A common rule of thumb: floor(T^(1/3)) or floor(4*(T/100)^(2/9)).
     denom_tol : float
         Threshold below which rolling variance is treated as zero (NaN out).
-    dtype : str
-        Storage dtype for input/intermediate pandas DataFrames. 'float32' saves
-        memory; 'float64' for higher precision. Note: this controls DataFrame
-        storage only — internal matrix operations (gram matrix accumulation and
-        the linear solve) always run in float64 for numerical stability,
-        regardless of this setting. See rolling_residualize for details.
+    precision : {'double', 'mixed', 'single'}
+        Controls storage and computation dtypes.
+        ``'double'`` (default): float64 storage, float64 compute — maximum
+        numerical fidelity.
+        ``'mixed'``: float32 storage, float64 compute — halves memory for
+        large panels while keeping full-precision numerics.
+        ``'single'``: float32 storage, float32 compute — smallest footprint,
+        suitable when ~4-digit accuracy suffices.
     asset_chunk_size : int
         Number of assets processed per chunk during residualization.
         Lower values reduce peak memory at the cost of slightly more overhead.
@@ -309,11 +311,11 @@ class RollingOLS:
         lag_signal: bool = False,
         hac_lags: int | None = None,
         denom_tol: float = 1e-12,
-        dtype: str = "float32",
+        precision: Literal["double", "mixed", "single"] = "double",
         asset_chunk_size: int = 100,
         warn_singular: bool = True,
         ewma_halflife: int | None = None,
-        cond_warn_threshold: float = 1e10,
+        cond_warn_threshold: float | None = None,
         cache_size: int = 1,
         estimate_every: int | str = 1,
         mode: Literal["batched", "joint"] | None = None,
@@ -351,7 +353,16 @@ class RollingOLS:
             not isinstance(hac_lags, int) or isinstance(hac_lags, bool) or hac_lags < 0
         ):
             raise ValueError(f"hac_lags must be a non-negative integer, got {hac_lags!r}")
-        if not np.isfinite(cond_warn_threshold) or cond_warn_threshold <= 0:
+        _PRECISION_MAP = {
+            "double": (np.float64, np.float64),
+            "mixed": (np.float32, np.float64),
+            "single": (np.float32, np.float32),
+        }
+        if precision not in _PRECISION_MAP:
+            raise ValueError(f"precision must be 'double', 'mixed', or 'single', got {precision!r}")
+        if cond_warn_threshold is not None and (
+            not np.isfinite(cond_warn_threshold) or cond_warn_threshold <= 0
+        ):
             raise ValueError("cond_warn_threshold must be finite and positive")
         if not isinstance(cache_size, int) or isinstance(cache_size, bool):
             raise TypeError("cache_size must be an integer")
@@ -381,10 +392,16 @@ class RollingOLS:
         self.lag_signal = lag_signal
         self.hac_lags = hac_lags
         self.denom_tol = denom_tol
-        self.dtype = dtype
+        self.precision = precision
+        self.storage_dtype: type[np.floating] = _PRECISION_MAP[precision][0]
+        self.compute_dtype: type[np.floating] = _PRECISION_MAP[precision][1]
         self.asset_chunk_size = asset_chunk_size
         self.warn_singular = warn_singular
-        self.cond_warn_threshold = cond_warn_threshold
+        self.cond_warn_threshold: float = (
+            cond_warn_threshold
+            if cond_warn_threshold is not None
+            else (1e10 if self.compute_dtype == np.float64 else 1e5)
+        )
         self.cache_size = cache_size
         self.estimate_every = estimate_every
         self.mode = mode
@@ -449,11 +466,11 @@ class RollingOLS:
         n_targets = targets.shape[1]
         n_factors = factors.shape[1]
         n_controls = 0 if controls is None else controls.shape[1]
-        float_bytes = np.dtype(np.float64).itemsize
+        float_bytes = np.dtype(self.storage_dtype).itemsize
         factor_frame_bytes = n_stored_endpoints * n_targets * n_factors * float_bytes
         target_frame_bytes = n_stored_endpoints * n_targets * float_bytes
 
-        factor_validity = np.isfinite(factors.to_numpy(dtype=np.float64))
+        factor_validity = np.isfinite(factors.to_numpy(dtype=self.storage_dtype))
         if n_factors:
             packed = np.packbits(factor_validity, axis=0)
             n_factor_patterns = len(
@@ -493,7 +510,7 @@ class RollingOLS:
         if self.lambda_ == 0:
             return None
         n_slopes = n_controls + n_factors
-        penalty = np.zeros((n_slopes + int(self.fit_intercept),) * 2)
+        penalty = np.zeros((n_slopes + int(self.fit_intercept),) * 2, dtype=self.compute_dtype)
         slope_offset = int(self.fit_intercept)
         if self.penalize_controls:
             control_positions = np.arange(slope_offset, slope_offset + n_controls)
@@ -527,6 +544,7 @@ class RollingOLS:
                 warn_singular=False,
                 cond_warn_threshold=self.cond_warn_threshold,
                 endpoint_positions=self._solver_endpoint_positions(targets.index),
+                compute_dtype=self.compute_dtype,
             )
             for chunk in chunks
         ]
@@ -636,11 +654,12 @@ class RollingOLS:
     ) -> FactorStatistics:
         """Derive statistics from exact FWL complete-case pattern records."""
         output_shape = beta.shape
-        r2_values = np.full(output_shape, np.nan)
-        partial_r2_values = np.full(output_shape, np.nan)
-        n_eff_values = np.full(output_shape, np.nan)
-        n_used_values = np.full(output_shape, np.nan)
-        beta_values = beta.to_numpy(dtype=np.float64, copy=False)
+        cdtype = self.compute_dtype
+        r2_values = np.full(output_shape, np.nan, dtype=cdtype)
+        partial_r2_values = np.full(output_shape, np.nan, dtype=cdtype)
+        n_eff_values = np.full(output_shape, np.nan, dtype=cdtype)
+        n_used_values = np.full(output_shape, np.nan, dtype=cdtype)
+        beta_values = beta.to_numpy(dtype=cdtype, copy=False)
         all_targets = selected_target_positions is None
         if all_targets:
             selected_target_positions = np.arange(assets.shape[1])
@@ -744,7 +763,7 @@ class RollingOLS:
         names = ["factors"] if controls is None else ["factors", "controls"]
         _validate_index(*frames, names=names)
 
-        factors = factors.astype(self.dtype)
+        factors = factors.astype(self.storage_dtype)
         self._index = factors.index.copy()
         self._factor_cols = factors.columns.tolist()
         self._factors = factors
@@ -773,7 +792,7 @@ class RollingOLS:
             )
 
         if controls is not None:
-            controls = controls.astype(self.dtype)
+            controls = controls.astype(self.storage_dtype)
             self._control_cols = controls.columns.tolist()
             self._controls_fitted = controls
         else:
@@ -825,7 +844,7 @@ class RollingOLS:
         _validate_index(fitted_index, assets, names=["factors", "assets"])
 
         asset_cols = assets.columns.tolist()
-        assets = assets.astype(self.dtype)
+        assets = assets.astype(self.storage_dtype)
 
         if self._factors is None:
             raise RuntimeError("Fitted factors are unavailable. Call fit() again.")
@@ -841,6 +860,7 @@ class RollingOLS:
         hac_lags = self.hac_lags
         warn_singular = self.warn_singular
         cond_warn_threshold = self.cond_warn_threshold
+        compute_dtype = self.compute_dtype
         asset_chunk_size = self.asset_chunk_size
         n_controls = len(self._control_cols)
         n_factors = len(self._factor_cols)
@@ -885,6 +905,7 @@ class RollingOLS:
                     warn_singular=False,
                     cond_warn_threshold=cond_warn_threshold,
                     endpoint_positions=solver_endpoint_positions,
+                    compute_dtype=compute_dtype,
                 )
                 for chunk in chunks
             ]
@@ -930,6 +951,7 @@ class RollingOLS:
                 params_only=True,
                 return_nuisance_coef=return_control_betas,
                 endpoint_positions=solver_endpoint_positions,
+                compute_dtype=compute_dtype,
             )
 
         # Joint mode: one solve with all factors together.
@@ -951,6 +973,9 @@ class RollingOLS:
             min_periods=self.min_periods,
             expanding=self.expanding,
             hac_lags=self.hac_lags,
+            precision=self.precision,
+            storage_dtype=np.dtype(self.storage_dtype),
+            compute_dtype=np.dtype(self.compute_dtype),
             cache_size=self.cache_size,
             estimated_positions=estimated_positions,
         )
@@ -1170,6 +1195,7 @@ class RollingOLS:
                     return_nuisance_coef=False,
                     residuals_only=True,
                     endpoint_positions=solver_endpoint_positions,
+                    compute_dtype=compute_dtype,
                 )
                 assert factor_fit.resid_endpoint is not None
                 residual_values = factor_fit.resid_endpoint[:, 0, :]
@@ -1211,6 +1237,7 @@ class RollingOLS:
                     denom_tol=denom_tol,
                     warn_invalid=warn_singular,
                     endpoint_positions=solver_endpoint_positions,
+                    compute_dtype=compute_dtype,
                 )
             return rolling_hac_se(
                 y=targets,
@@ -1225,6 +1252,7 @@ class RollingOLS:
                 denom_tol=denom_tol,
                 warn_invalid=warn_singular,
                 endpoint_positions=solver_endpoint_positions,
+                compute_dtype=compute_dtype,
             )
 
         def load_factor_adjusted_returns(
