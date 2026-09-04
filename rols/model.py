@@ -191,7 +191,7 @@ class RollingOLS:
         batched uses the FWL fast path and is at or faster than joint at panel
         scale. Under Ridge (``lambda_ > 0``), FWL is invalid, so batched
         degrades to K separate joint-equivalent solves — joint mode is then
-        substantially cheaper. See ``docs/PERFORMANCE.md`` for measured
+        substantially cheaper. See ``docs/reference/performance.md`` for measured
         numbers. The two modes coincide for a single factor or for mutually
         orthogonal factors. Stored on the result as ``result.mode``.
 

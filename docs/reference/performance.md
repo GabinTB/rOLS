@@ -2,7 +2,7 @@
 
 This document explains where time and memory actually go, when the fast paths
 apply, and reports measured numbers from the `benchmarks/` harness (task 10).
-It is a companion to [`docs/SPECIFICATION.md`](SPECIFICATION.md), which
+It is a companion to [`docs/reference/specification.md`](specification.md), which
 defines *what* is computed; this document is about the *cost* of computing it.
 
 All numbers below were captured on the machine and Python build recorded in
@@ -147,7 +147,7 @@ is exactly *one* such solve — joint is then substantially cheaper:
 So: default to batched for OLS screening at panel scale; prefer joint whenever
 factors are correlated (statistical correctness) or `lambda_ > 0` (also
 faster there). Neither mode is a strictly dominant default — see
-[the README](../README.md#batched-vs-joint-mode) for the decision in plain
+[Usage Patterns](../guide/usage-patterns.md#batched-vs-joint-mode) for the decision in plain
 terms.
 
 ---

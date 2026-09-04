@@ -2652,7 +2652,12 @@ class TestRidgeInferenceDocumentation:
 
     def test_specification_contains_estimand_distinction(self):
         """SPECIFICATION.md §10 must define β_λ and β₀ and state the caveat."""
-        spec = __import__("pathlib").Path(__file__).parent.parent / "docs" / "SPECIFICATION.md"
+        spec = (
+            __import__("pathlib").Path(__file__).parent.parent
+            / "docs"
+            / "reference"
+            / "specification.md"
+        )
         text = spec.read_text()
         # Section 10 must be present and contain the three objects
         assert "β₀" in text or "beta_0" in text.lower() or "unpenalized population" in text
@@ -2817,7 +2822,12 @@ class TestHACPanelDependenceDocumentation:
 
     def test_specification_out_of_scope_mentions_panel_robust(self):
         """SPECIFICATION.md §13 must mention clustered SEs or Driscoll-Kraay."""
-        spec = __import__("pathlib").Path(__file__).parent.parent / "docs" / "SPECIFICATION.md"
+        spec = (
+            __import__("pathlib").Path(__file__).parent.parent
+            / "docs"
+            / "reference"
+            / "specification.md"
+        )
         text = spec.read_text()
         assert "clustered" in text or "Driscoll" in text, (
             "SPECIFICATION §13 must name panel-robust inference alternatives"

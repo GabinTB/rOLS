@@ -1,0 +1,68 @@
+site_name: rOLS
+site_url: https://gabintb.github.io/rOLS/
+site_description: Vectorized rolling and expanding regression for multi-target, multi-factor time series.
+repo_url: https://github.com/GabinTB/rOLS
+repo_name: GabinTB/rOLS
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.expand
+    - toc.follow
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_bases: false
+            docstring_style: numpy
+            members_order: source
+            show_root_heading: true
+            heading_level: 2
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.snippets:
+      base_path: ["."]
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - User Guide:
+      - Getting Started: guide/getting-started.md
+      - Usage Patterns: guide/usage-patterns.md
+      - Migration from v0.2.x: guide/migration.md
+  - API Reference:
+      - RollingOLS: api/rolling-ols.md
+      - RollingOLSResult: api/rolling-ols-result.md
+      - Estimators: api/estimators.md
+  - Technical Reference:
+      - Statistical Specification: reference/specification.md
+      - Performance Guide: reference/performance.md
+  - Changelog: changelog.md

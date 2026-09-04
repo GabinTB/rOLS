@@ -3,7 +3,6 @@ name: Publish
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -55,7 +54,7 @@ jobs:
 
   testpypi:
     needs: build
-    if: github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
     environment:
@@ -80,7 +79,7 @@ jobs:
           skip-existing: true
 
   pypi:
-    needs: build
+    needs: [build, testpypi]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 

@@ -19,6 +19,7 @@ science to forcing factors; and adaptively filtering signals in real time.
 | License | [![License](https://img.shields.io/pypi/l/rols)](https://github.com/GabinTB/rOLS/blob/main/LICENSE) |
 | Downloads | [![Downloads](https://img.shields.io/pypi/dm/rols)](https://pypi.org/project/rols/) |
 | GitHub Stars | [![Stars](https://img.shields.io/github/stars/GabinTB/rOLS?style=social)](https://github.com/GabinTB/rOLS) |
+| Documentation | [![Docs](https://img.shields.io/badge/docs-online-blue)](https://gabintb.github.io/rOLS/) |
 
 > **v0.3.x is a correctness release.** An independent audit found that v0.2.1
 > and earlier estimated a statistically inconsistent model — see
@@ -55,7 +56,7 @@ for what it is deliberately not.
 
 The full statistical specification — window semantics, Frisch-Waugh-Lovell,
 Ridge normalization, EWMA weighting, R² variants, HAC inference, the index
-contract — is [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md). This README is
+contract — is [`docs/reference/specification.md`](docs/reference/specification.md). This README is
 a practical guide to the same estimator; the specification is the source of
 truth when they disagree.
 
@@ -153,7 +154,7 @@ for a runnable, end-to-end version covering `mode`, full vs partial R², and
 | `precision` | `"double"` | Precision policy: `"double"` (float64/float64), `"mixed"` (float32 storage / float64 compute), `"single"` (float32/float32). See [Precision](#precision) |
 | `asset_chunk_size` | `100` | Targets processed per chunk during residualization; bounds peak memory |
 | `cache_size` | `1` | Factors retained in each on-demand result cache |
-| `warn_singular` | `True` | Warn once on singular or ill-conditioned windows (affected estimates become NaN, or become numerically unreliable but finite for ill-conditioning — see [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md)) |
+| `warn_singular` | `True` | Warn once on singular or ill-conditioned windows (affected estimates become NaN, or become numerically unreliable but finite for ill-conditioning — see [`docs/reference/specification.md`](docs/reference/specification.md)) |
 | `cond_warn_threshold` | `None` | Warn when `cond(X'X)` exceeds this. Default: `1e10` (float64 compute) or `1e5` (float32 compute) |
 | `estimate_every` | `1` | Estimate only every `k`-th endpoint, or the last observation per pandas offset period — see [Sparse cadence](#sparse-cadence-estimate_every) |
 
@@ -309,7 +310,7 @@ defaults to `"batched"` when omitted.
 The two modes coincide exactly for a single factor, or for factors that are
 mutually orthogonal on the estimation sample. Which mode is *faster* depends
 on `lambda_`, not on which is statistically correct — see
-[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md#batched-vs-joint) for measured
+[`docs/reference/performance.md`](docs/reference/performance.md#batched-vs-joint) for measured
 numbers:
 
 - **`lambda_ == 0` (OLS):** batched uses the Frisch-Waugh fast path, sharing
@@ -338,7 +339,7 @@ In batched mode, missingness in one factor only invalidates the model that
 uses it — other factors are unaffected. In joint mode, missingness in any
 factor invalidates the shared model for every factor.
 
-See [`docs/SPECIFICATION.md §6`](docs/SPECIFICATION.md#6-missing-data) for the
+See [`docs/reference/specification.md §6`](docs/reference/specification.md#6-missing-data) for the
 formal statement.
 
 ---
@@ -417,7 +418,7 @@ pseudo-true parameter β_λ — not around the unpenalized population coefficien
 β₀. Intervals from `get_se` should not be read as nominal-coverage confidence
 intervals for β₀. The shortfall grows with `lambda_`, and selecting `lambda_`
 from the data (cross-validation, grid search) invalidates the nominal level
-further. See [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) §10 for the full
+further. See [`docs/reference/specification.md`](docs/reference/specification.md) §10 for the full
 estimand definition. For OLS (`lambda_ = 0`) this distinction collapses.
 
 ### EWMA observation weighting
@@ -562,7 +563,7 @@ resolution.
 Missing values in a factor split its sufficient statistics into
 factor-specific complete-case patterns and may increase memory use relative to
 the clean-data figures above. See
-[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md#memory) for the full breakdown and
+[`docs/reference/performance.md`](docs/reference/performance.md#memory) for the full breakdown and
 the `structural` vs `scattered` NaN-pattern cases.
 
 ---
@@ -592,7 +593,7 @@ model = RollingOLS(window=60, precision="mixed")  # float32 storage, float64 com
 
 v0.2.1 and earlier estimated a statistically inconsistent model. The table
 below is what to expect when re-running old code against v0.3.x — see
-`CHANGELOG.md` and [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) for the
+`CHANGELOG.md` and [`docs/reference/specification.md`](docs/reference/specification.md) for the
 full detail behind each row.
 
 | v0.2.x behaviour | v0.3.x behaviour | What to expect |
@@ -627,7 +628,7 @@ solved for every target sharing that mask as a block of right-hand sides. This
 degrades gracefully to per-target solves when every target has a unique
 pattern (fully scattered missingness) and is a large win for the realistic
 case (structural entry/exit, most targets sharing the all-present pattern).
-See [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) for the cost model.
+See [`docs/reference/performance.md`](docs/reference/performance.md) for the cost model.
 
 **Stride tricks** — the rolling window matrix operations use
 `numpy.lib.stride_tricks.as_strided` to build zero-copy sliding window views,
@@ -641,16 +642,16 @@ keeping the factor cache bounded by `cache_size`.
 For the cost model behind these — where time actually goes, when the FWL fast
 path applies, why joint is not automatically cheaper, and why rank-1 window
 updating was considered and rejected — see
-[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+[`docs/reference/performance.md`](docs/reference/performance.md).
 
 ---
 
 ## Further reading
 
-- [`docs/SPECIFICATION.md`](docs/SPECIFICATION.md) — the full statistical
+- [`docs/reference/specification.md`](docs/reference/specification.md) — the full statistical
   specification; the executable scalar oracle in `tests/oracle.py` implements
   it directly, and every optimized path is validated against that oracle by a
   differential test.
-- [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) — cost model, memory
+- [`docs/reference/performance.md`](docs/reference/performance.md) — cost model, memory
   arithmetic, and measured benchmark numbers.
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in v0.3.x and why.

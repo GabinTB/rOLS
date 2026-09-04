@@ -445,7 +445,7 @@ class RollingOLSResult:
         each asset's own residuals.  It does not correct for cross-sectional
         dependence across assets.  Aggregating per-asset t-statistics in a
         correlated panel overstates significance; see
-        ``docs/SPECIFICATION.md`` §13 for panel-robust alternatives.
+        ``docs/reference/specification.md`` §13 for panel-robust alternatives.
 
         Requires ``hac_lags`` to be set on the constructor (raises otherwise).
         Computation is lazy and streams one endpoint at a time.

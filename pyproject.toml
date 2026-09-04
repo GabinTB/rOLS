@@ -24,6 +24,7 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/GabinTB/rOLS"
+Documentation = "https://gabintb.github.io/rOLS/"
 
 [dependency-groups]
 dev = [
@@ -32,6 +33,10 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.9",
     "statsmodels>=0.14",
+]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
 ]
 notebooks = [
     "jupyter>=1.0.0",
