@@ -1,0 +1,1844 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Vectorized rolling and expanding regression for multi-target, multi-factor time series.">
+      
+      
+      
+        <link rel="canonical" href="https://gabintb.github.io/rOLS/changelog/">
+      
+      
+        <link rel="prev" href="../reference/performance/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Changelog - rOLS</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="rOLS" class="md-header__button md-logo" aria-label="rOLS" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rOLS
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/GabinTB/rOLS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GabinTB/rOLS
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="rOLS" class="md-nav__button md-logo" aria-label="rOLS" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    rOLS
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/GabinTB/rOLS" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GabinTB/rOLS
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/usage-patterns/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guide/migration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migration from v0.2.x
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/rolling-ols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RollingOLS
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/rolling-ols-result/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    RollingOLSResult
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/estimators/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Estimators
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Technical Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Technical Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/specification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Statistical Specification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/performance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#040-2026-08-20" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 — 2026-08-20
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 — 2026-08-20">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#032-2026-08-19" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.2 — 2026-08-19
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.3.2 — 2026-08-19">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-documented" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed / Documented
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#031-2026-08-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.1 — 2026-08-18
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.3.1 — 2026-08-18">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-2026-08-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 — 2026-08-18
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.3.0 — 2026-08-18">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#021-2026-06-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.1 - 2026-06-14
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.2.1 - 2026-06-14">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#012-2026-04-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.2 - 2026-04-14
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.2 - 2026-04-14">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#011-2026-04-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.1 - 2026-04-02
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.1 - 2026-04-02">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-2026-04-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 - 2026-04-02
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 - 2026-04-02">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#040-2026-08-20" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.4.0 — 2026-08-20
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.4.0 — 2026-08-20">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#032-2026-08-19" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.2 — 2026-08-19
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.3.2 — 2026-08-19">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-documented" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed / Documented
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#031-2026-08-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.1 — 2026-08-18
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.3.1 — 2026-08-18">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#030-2026-08-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.3.0 — 2026-08-18
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.3.0 — 2026-08-18">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#breaking-changes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Breaking Changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#added_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#021-2026-06-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.2.1 - 2026-06-14
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.2.1 - 2026-06-14">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#changed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Changed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#012-2026-04-14" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.2 - 2026-04-14
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.2 - 2026-04-14">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#011-2026-04-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.1 - 2026-04-02
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.1 - 2026-04-02">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#010-2026-04-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        0.1.0 - 2026-04-02
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="0.1.0 - 2026-04-02">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#added_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Added
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="changelog">Changelog<a class="headerlink" href="#changelog" title="Permanent link">&para;</a></h1>
+<p>All notable changes to rOLS are documented here.</p>
+<p>The format is based on <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>,
+and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>.</p>
+<h2 id="040-2026-08-20"><a href="https://github.com/GabinTB/rOLS/compare/v0.3.2...v0.4.0">0.4.0</a> — 2026-08-20<a class="headerlink" href="#040-2026-08-20" title="Permanent link">&para;</a></h2>
+<h3 id="breaking-changes">Breaking Changes<a class="headerlink" href="#breaking-changes" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>dtype</code> parameter replaced by <code>precision</code></strong> (#25). The old <code>dtype</code> parameter
+  (<code>"float32"</code> / <code>"float64"</code>) is replaced by a three-mode <code>precision</code> policy:
+  <code>"double"</code> (float64/float64, the new default), <code>"mixed"</code> (float32 storage /
+  float64 compute), and <code>"single"</code> (float32/float32). <code>cond_warn_threshold</code>
+  default is now <code>None</code> (auto-selected: <code>1e10</code> for float64 compute, <code>1e5</code> for
+  float32 compute). All internal array allocations respect the chosen precision.
+  Migration: <code>dtype="float64"</code> → <code>precision="double"</code>,
+  <code>dtype="float32"</code> → <code>precision="mixed"</code>.</li>
+</ul>
+<hr />
+<h2 id="032-2026-08-19"><a href="https://github.com/GabinTB/rOLS/compare/v0.3.1...v0.3.2">0.3.2</a> — 2026-08-19<a class="headerlink" href="#032-2026-08-19" title="Permanent link">&para;</a></h2>
+<h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>tests/test_fwl_conditioning.py</code>: 10 tests across 5 groups validating the FWL
+  rank-condition heuristic under near-collinear and rank-deficient designs (#20).</li>
+</ul>
+<h3 id="fixed-documented">Fixed / Documented<a class="headerlink" href="#fixed-documented" title="Permanent link">&para;</a></h3>
+<ul>
+<li>HAC SEs are time-series only — documented the panel cross-sectional dependence
+  limitation in <code>get_se</code>/<code>get_tstat</code> docstrings, <code>docs/SPECIFICATION.md</code> §13,
+  and <code>README.md</code> (#19).</li>
+</ul>
+<hr />
+<h2 id="031-2026-08-18"><a href="https://github.com/GabinTB/rOLS/compare/v0.3.0...v0.3.1">0.3.1</a> — 2026-08-18<a class="headerlink" href="#031-2026-08-18" title="Permanent link">&para;</a></h2>
+<h3 id="added_1">Added<a class="headerlink" href="#added_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Ridge effective degrees of freedom <code>df_eff = tr[G(G+P)⁻¹]</code> used in
+  adjusted R² and residual-dof, replacing the raw parameter count (#15).</li>
+<li><code>get_se</code> / <code>get_tstat</code> docstrings and <code>SPECIFICATION.md</code> §10 now define
+  the Ridge inference estimand (β_λ vs β₀) and the nominal-coverage caveat (#16).</li>
+<li><code>tests/test_hac_reference.py</code>: five structurally independent validations
+  of the Ridge HAC sandwich (#17).</li>
+</ul>
+<h3 id="breaking-changes_1">Breaking Changes<a class="headerlink" href="#breaking-changes_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>mode</code> is now required when supplying more than one factor to <code>fit()</code>;
+  omitting it raises <code>ValueError</code> with a message that names both options.
+  Single-factor calls and calls with an explicit <code>mode</code> are unaffected (#18).</li>
+</ul>
+<hr />
+<h2 id="030-2026-08-18"><a href="https://github.com/GabinTB/rOLS/compare/v0.2.1...v0.3.0">0.3.0</a> — 2026-08-18<a class="headerlink" href="#030-2026-08-18" title="Permanent link">&para;</a></h2>
+<p><strong>A correctness release.</strong> An independent four-reviewer audit (13 August 2026) found that v0.2.1 did not estimate the model its
+documentation described: the intercept convention was internally
+inconsistent, <code>lambda_</code> had no effect without controls, rolling
+Frisch-Waugh-Lovell and Gram-Schmidt used nested rather than window-wise
+projections, and HAC standard errors did not correspond to the reported
+coefficients. <strong>Estimates from v0.2.1 and earlier should not be relied upon</strong>
+— re-run them, do not treat this as a routine version bump. Every fix below is
+covered by a differential test against a from-scratch scalar oracle
+(<code>tests/oracle.py</code>), not just against the library's own prior output. See
+<a href="docs/SPECIFICATION.md"><code>docs/SPECIFICATION.md</code></a> for the estimator this
+release implements and <a href="README.md#migration-from-v02x">README.md § Migration from v0.2.x</a>
+for a practical before/after table.</p>
+<h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Intercept convention (F1).</strong> Factor betas, R², and HAC inference now come
+  from one consistent model per fit — an explicit intercept column when
+  <code>fit_intercept=True</code> (the default), a through-origin model when <code>False</code> —
+  instead of centred betas/R² alongside a through-origin residualization and
+  HAC system.</li>
+<li><strong>Nested-rolling FWL (F2).</strong> Controls are now partialled out using the
+  <em>current window's own</em> projection, solved directly (or via a proven-equal
+  FWL fast path), instead of re-rolling a second regression over
+  already-rolled historical residuals. The double warm-up this caused is
+  gone: with controls, the first estimate now appears at <code>min_periods</code>, not
+  <code>2 × min_periods</code>.</li>
+<li><strong>HAC standard errors did not match the reported beta (F3, F20).</strong> SEs are
+  now computed from the same current-window fit as the beta they describe,
+  using the full design (intercept and controls included in both bread and
+  scores), the exact complete-case sample, and — under <code>ewma_halflife</code> — the
+  same observation weights as the coefficient estimator. Previously HAC used
+  equal weighting even when the beta was EWMA-weighted, and its residual
+  window mixed residuals from different historical fits.</li>
+<li><strong><code>lambda_</code> had no effect without controls, and only shrank a
+  residualization step with controls (F4, F5).</strong> Ridge is now a single
+  penalized solve on the joint design of the selected model, normalized so
+  <code>lambda_</code> has the same effective strength regardless of window length,
+  EWMA half-life, or complete-case sample size.</li>
+<li><strong>Missing-target numerator/denominator mismatch (F6).</strong> A beta's numerator
+  and denominator (and every other reported quantity) now come from the exact
+  same complete-case row set — previously the numerator used the
+  factor-target paired sample while the denominator could include additional
+  factor observations the target didn't have.</li>
+<li><strong>Silent input misalignment (F7).</strong> Factors, controls, and targets must now
+  have identical, unique, monotonically increasing indexes, checked with
+  <code>ValueError</code> before any array conversion. Previously low-level NumPy paths
+  paired rows positionally while pandas paths aligned by label, so
+  same-length permuted inputs could silently combine two different row
+  pairings.</li>
+<li><strong>EWMA renormalization changed the effective Ridge penalty (F8).</strong> Weights
+  are renormalized to sum to one on the complete-case sample after row drops,
+  under both equal and EWMA weighting, so <code>lambda_</code>'s meaning is preserved
+  under missingness.</li>
+<li><strong>Signal used a transformed factor while beta was estimated on a different
+  one (F9).</strong> With controls now residualized only through the joint/FWL
+  solve (no separate orthogonalized factor representation), <code>get_signal</code>
+  multiplies beta by the same factor values the beta was estimated on.</li>
+<li><strong><code>get_control_beta</code> omitted the named factor from its own residualization
+  set (F10).</strong> A control's coefficient now comes from the joint fit that
+  includes the requested factor. In batched mode this means a control's beta
+  <strong>can vary by which factor is named</strong> when the two are correlated — the
+  previous "factor-independent" claim was true only in the special case of
+  mutual orthogonality, not in general.</li>
+<li><strong>Squared condition number, silent ill-conditioning (F15).</strong> The solver no
+  longer forms the normal equations and calls <code>np.linalg.solve</code> directly (which
+  squares <code>cond(X)</code> and raises only on exact numerical singularity); it now
+  factorizes the design (QR, augmented with <code>√penalty</code> for Ridge) and warns
+  once, aggregated, when <code>cond(X'X)</code> exceeds <code>cond_warn_threshold</code> (new
+  parameter, default <code>1e10</code>).</li>
+<li><strong>Adjusted R² degrees of freedom, and full vs partial R² conflation
+  (F16).</strong> Adjusted R² now uses the correct slope count including controls
+  (previously hardcoded to one slope) and effective sample size under EWMA
+  (previously an integer row count). <code>get_r2</code> and the new <code>get_partial_r2</code>
+  are now two distinct, correctly defined quantities — see
+  <a href="README.md#r²-variants">README § R² variants</a>.</li>
+<li><strong>Out-of-range index in the regressor-NaN fallback path (F17).</strong> Loop
+  bounds in <code>rolling_residualize</code>'s regressor-NaN and vectorized-target-NaN
+  paths no longer go out of bounds when <code>T &lt; window - 1</code>.</li>
+<li><strong>NaN contract mismatch between docs and code (F18).</strong> The documented
+  contract and the implementation now agree: a row is used iff the intercept
+  design, every control, every factor in the selected model, and the target
+  are simultaneously finite (complete-case within window); a result is
+  emitted iff at least <code>min_periods</code> such rows survive.</li>
+<li><code>_solve_batch</code> no longer lets <code>inf</code> from near-singular solves propagate into
+  betas, signals, and R² — results are sanitized to NaN in place.</li>
+<li>HAC standard errors are isolated per target: a NaN in one target's residuals
+  no longer forces NaN SEs for every target in that window.</li>
+</ul>
+<h3 id="breaking-changes_2">Breaking Changes<a class="headerlink" href="#breaking-changes_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>mode</code> is now required for multi-factor calls.</strong> Passing more than one
+  factor to <code>fit()</code> without <code>mode</code> raises <code>ValueError</code>. Previously, <code>mode</code>
+  defaulted to <code>"batched"</code> silently, meaning every existing multi-factor
+  caller received marginal (not mutually controlled) betas without having
+  chosen that estimand. The error message names both options and explains
+  their difference. Single-factor calls are unaffected: <code>mode</code> remains
+  optional there (the two modes coincide for one factor). Migration: add
+  <code>mode="batched"</code> to preserve the old numbers exactly, or switch to
+  <code>mode="joint"</code> for the mutually-controlled estimand.</li>
+</ul>
+<h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Multi-factor semantics made explicit (F14).</strong> New <code>mode</code> parameter:
+  <code>"batched"</code> fits one model per factor — marginal given controls, not
+  mutually controlled; <code>"joint"</code> fits one model with every factor, mutually
+  controlled. Previously the library ran batched regressions while describing
+  itself as multi-factor without naming the distinction.
+  <code>warn_correlated_factors=True</code> (default) now warns once when
+  <code>mode="batched"</code> factors are correlated above <code>|ρ| &gt; 0.3</code>.</li>
+<li><strong>Core performance rebuild — no numeric change.</strong> Targets sharing an exact
+  complete-case pattern within a window are now factorized once and solved
+  as a block of right-hand sides, and the (now correctly window-wise) FWL
+  residualization shares one controls-only projection and one GEMM across
+  every factor. Every result is unchanged to <code>1e-10</code> against the pre-rebuild
+  path; see <a href="docs/PERFORMANCE.md"><code>docs/PERFORMANCE.md</code></a> for measured cost.</li>
+<li><strong>Lazy evaluation and bounded memory.</strong> Residuals, R², partial R², and
+  standard errors are now computed on demand rather than eagerly, with a
+  bounded per-factor cache (new <code>cache_size</code> parameter, default <code>1</code>). New
+  <code>iter_beta()</code> / <code>iter_se()</code> process every factor without retaining all of
+  them at once.</li>
+<li><strong>Sparse estimation cadence.</strong> New <code>estimate_every</code> parameter (integer step
+  count or pandas offset alias) restricts solving to a coarser cadence while
+  windows still contain every underlying observation; <code>get_*</code> accessors
+  return the full index with NaN at skipped endpoints.</li>
+<li><strong>Input validation (F19).</strong> <code>window</code>, <code>min_periods</code>, <code>lambda_</code>,
+  <code>ewma_halflife</code>, <code>hac_lags</code>, and their cross-constraints (e.g.
+  <code>min_periods &gt; window</code> in rolling mode) are validated at construction with
+  <code>ValueError</code> naming the offending value, instead of failing silently or
+  deep in a NumPy call.</li>
+</ul>
+<h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>fit_intercept</code> (default <code>True</code>), <code>mode</code>, <code>warn_correlated_factors</code>,
+  <code>penalize_controls</code>, <code>cond_warn_threshold</code>, <code>cache_size</code>, <code>estimate_every</code>
+  parameters on <code>RollingOLS</code>.</li>
+<li><code>get_intercept(factor)</code>, <code>get_partial_r2(factor)</code>, <code>get_dof(factor)</code>,
+  <code>get_n_used(factor)</code> on <code>RollingOLSResult</code>.</li>
+<li><code>iter_beta()</code> / <code>iter_se()</code> for bounded-memory iteration over all factors.</li>
+<li><code>result.mode</code> — the mode a result was computed with.</li>
+<li><code>RollingOLS.estimate_memory(targets, factors, controls)</code> — persistent and
+  on-demand memory cost from input shapes, before fitting.</li>
+<li><code>tests/oracle.py</code> — a deliberately slow, from-scratch scalar reference
+  implementation; every optimized path is validated against it by a
+  differential test, closing the "oracle was the library's own loop" gap
+  (F22) that let the above defects ship undetected.</li>
+<li><code>benchmarks/</code> — a wall-time and peak-memory harness with a captured v0.2.1
+  speed baseline (speed reference only — v0.2.1's estimates remain
+  statistically incorrect and are never a correctness reference).</li>
+</ul>
+<h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong><code>get_factor_mimicking_returns(factor)</code> and
+  <code>get_all_factor_mimicking_returns()</code> on <code>RollingOLSResult</code> (F13).</strong> These
+  accessors claimed to produce cross-sectional Fama-MacBeth factor returns
+  but performed no cross-sectional estimation — they renamed the single
+  column of an ordinary time-series rolling beta. Cross-sectional estimation
+  needs its own date × asset × factor data model, specification, and oracle;
+  it is out of scope for this library. See
+  <a href="README.md#out-of-scope">README § Out of scope</a>.</li>
+<li><strong>Rolling Gram-Schmidt orthogonalization (F11, F12).</strong>
+  <code>orthogonalize_factors</code> / <code>orthogonalize_controls</code> on <code>fit()</code>/
+  <code>fit_transform()</code>, and <code>get_raw_exposure_signal()</code>. Like the FWL defect
+  above, orthogonalization was nested-rolling rather than window-wise, and
+  interacted badly with a fixed Ridge penalty since it also changed factor
+  scale at every endpoint. Apply orthogonalization to your inputs before
+  calling <code>fit()</code> if you need it; <code>mode="joint"</code> is the standard way to
+  estimate mutually-controlled factor effects without it.</li>
+</ul>
+<h3 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>README.md</code>, <code>docs/SPECIFICATION.md</code> (new), <code>docs/PERFORMANCE.md</code> (new),
+  and docstrings across <code>rols/*.py</code> rewritten against the implementation as
+  it now stands, including a v0.2.x migration table and an explicit
+  out-of-scope section (cross-sectional estimation, factor-mimicking
+  portfolios, orthogonalization, panel fixed effects).</li>
+<li><code>examples/fama_french_factors.ipynb</code> updated to the current API
+  (<code>fit_intercept</code>, <code>mode</code>, <code>estimate_every</code>, <code>get_r2</code>/<code>get_partial_r2</code>,
+  removed orthogonalization parameters) and re-run end to end.</li>
+</ul>
+<h2 id="021-2026-06-14"><a href="https://github.com/GabinTB/rOLS/compare/v0.1.2...v0.2.1">0.2.1</a> - 2026-06-14<a class="headerlink" href="#021-2026-06-14" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>Superseded.</strong> An independent audit round (13 August 2026) found the
+estimator did not match its documentation: the intercept convention was
+internally inconsistent, <code>lambda_</code> had no effect without controls, rolling
+FWL and Gram-Schmidt used nested rather than window-wise projections, and
+HAC standard errors did not correspond to the reported coefficients.
+<strong>Estimates from v0.2.1 and earlier should not be relied upon.</strong> See</p>
+</blockquote>
+<h3 id="added_3">Added<a class="headerlink" href="#added_3" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>ewma_halflife</code> parameter on <code>RollingOLS</code>: exponentially weight observations
+  within each window so recent data carries more weight. Flows through betas,
+  R², and the Frisch-Waugh residualization (weighted least squares per window).
+  Not compatible with <code>expanding=True</code>. HAC SEs remain equal-weighted. (#1)</li>
+<li><code>get_factor_adjusted_returns()</code> on <code>RollingOLSResult</code>: exposes the FWL step 2
+  output (asset returns with only the controls partialled out), distinct from
+  <code>get_residuals(factor)</code> which also removes the factor (step 3). (#3)</li>
+<li><code>get_factor_mimicking_returns(factor)</code> and <code>get_all_factor_mimicking_returns()</code>
+  on <code>RollingOLSResult</code>: named accessors for the cross-sectional use case where
+  the rolling beta is the factor mimicking return. (#5)</li>
+<li><code>get_control_beta(factor, control)</code> reinstated and reimplemented correctly via
+  Frisch-Waugh-Lovell — returns the joint (not univariate marginal) control beta.
+  Enabled with <code>return_control_betas=True</code> on <code>transform()</code>/<code>fit_transform()</code>.
+  Control betas are factor-independent and computed once, shared across factors. (#9)</li>
+<li><code>warn_singular</code> parameter on <code>RollingOLS</code> (default <code>True</code>): emit a single
+  aggregated <code>RuntimeWarning</code> when rolling windows are singular, with affected
+  estimates set to NaN. Set <code>False</code> to suppress. (#12)</li>
+<li>Test suite covering estimators, model, results, and integration. (#11)</li>
+</ul>
+<h3 id="changed_1">Changed<a class="headerlink" href="#changed_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>NaN-robust residualization rewritten with an intermediate vectorized path:
+  when X is clean and NaNs are present only in the targets (the typical large
+  asset-panel case), residualization is vectorized over time with an O(N) loop
+  over assets instead of the O(T*N) per-column loop. Produces identical results
+  with a large speedup at scale. (#2)</li>
+<li>HAC standard error computation vectorized over the time axis via stride tricks;
+  the Python loop is now O(n_lags) instead of O(T). Expanding-window path still
+  loops. Results identical to the previous implementation. (#4)</li>
+</ul>
+<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>_solve_batch</code> no longer lets <code>inf</code> from near-singular solves propagate into
+  betas, signals, and R². Results are written in place and sanitized to NaN. (#6)</li>
+<li>Adjusted R² no longer divides by zero when <code>n_obs &lt;= 2</code>; the denominator is
+  guarded so those windows yield NaN instead of <code>inf</code>. (#7)</li>
+<li>HAC standard errors are now isolated per asset: a NaN in one asset's residuals
+  no longer forces NaN SEs for all assets in that window. A NaN in the factor
+  still invalidates the whole window. (#8)</li>
+<li>NaN handling in rolling residualization no longer contaminates the whole panel
+  when a single asset has missing values; NaNs in one target column do not affect
+  other columns. NaNs in regressors still invalidate the window. Earlier
+  "all-or-nothing" behaviour produced all-NaN results on sparse panels.</li>
+</ul>
+<h3 id="documentation_1">Documentation<a class="headerlink" href="#documentation_1" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Clarified that <code>dtype</code> controls pandas DataFrame storage only; internal matrix
+  operations always run in float64 for numerical stability. (#10)</li>
+<li>README updated with EWMA, <code>warn_singular</code>, factor-adjusted returns, control
+  betas, factor mimicking returns, and the precision note.</li>
+</ul>
+<h2 id="012-2026-04-14"><a href="https://github.com/GabinTB/rOLS/compare/v0.1.1...v0.1.2">0.1.2</a> - 2026-04-14<a class="headerlink" href="#012-2026-04-14" title="Permanent link">&para;</a></h2>
+<h3 id="added_4">Added<a class="headerlink" href="#added_4" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Python 3.10–3.14 classifiers and project metadata.</li>
+</ul>
+<h2 id="011-2026-04-02"><a href="https://github.com/GabinTB/rOLS/compare/v0.1.0...v0.1.1">0.1.1</a> - 2026-04-02<a class="headerlink" href="#011-2026-04-02" title="Permanent link">&para;</a></h2>
+<h3 id="fixed_2">Fixed<a class="headerlink" href="#fixed_2" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Packaging metadata corrections.</li>
+</ul>
+<h2 id="010-2026-04-02"><a href="https://github.com/GabinTB/rOLS/releases/tag/v0.1.0">0.1.0</a> - 2026-04-02<a class="headerlink" href="#010-2026-04-02" title="Permanent link">&para;</a></h2>
+<h3 id="added_5">Added<a class="headerlink" href="#added_5" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Initial release: vectorized rolling/expanding OLS and Ridge regression for
+  multi-target, multi-factor time series. Frisch-Waugh-Lovell control
+  partialling, rolling Gram-Schmidt orthogonalization, Newey-West HAC standard
+  errors, lagged signals, and long-format output.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "navigation.sections", "navigation.expand", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
